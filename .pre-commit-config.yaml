@@ -1,7 +1,19 @@
 repos:
--   repo: https://github.com/ambv/black
-    rev: stable
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.0.1
     hooks:
-    - id: black
-      language_version: python3.7
-      exclude: torchbeast/atari_wrappers.py
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-ast
+      - id: check-merge-conflict
+  - repo: https://github.com/psf/black
+    rev: 21.10b0
+    hooks:
+      - id: black
+  - repo: https://github.com/jumanjihouse/pre-commit-hooks
+    rev: 2.1.5
+    hooks:
+      - id: git-dirty
+      - id: shellcheck
+      - id: shfmt
