@@ -382,51 +382,30 @@ class PointMassEnv(gym.GoalEnv):
                         )
                     )
 
-                colwallId = self._p.createCollisionShape(
+                wall_id = self._p.createCollisionShape(
                     p.GEOM_BOX, halfExtents=[0.05, 2.5, 0.5]
                 )
-                self._p.createMultiBody(
-                    0,
-                    colwallId,
-                    10,
-                    [self.target_limit * 2 + 0.2, 0, 0.0],
-                    p.getQuaternionFromEuler([0, 0, 0]),
-                )
-                self._p.createMultiBody(
-                    0,
-                    colwallId,
-                    10,
-                    [-self.target_limit * 2 - 0.2, 0, 0.0],
-                    p.getQuaternionFromEuler([0, 0, 0]),
-                )
-                self._p.createMultiBody(
-                    0,
-                    colwallId,
-                    10,
-                    [0, self.target_limit * 2 + 0.2, 0],
-                    p.getQuaternionFromEuler([0, 0, math.pi / 2]),
-                )
-                self._p.createMultiBody(
-                    0,
-                    colwallId,
-                    10,
-                    [0, -self.target_limit * 2 - 0.2, 0],
-                    p.getQuaternionFromEuler([0, 0, math.pi / 2]),
-                )
-
-                if self.num_objects > 0:
-                    colcubeId = self._p.createCollisionShape(
-                        p.GEOM_BOX, halfExtents=[0.35, 0.35, 0.35]
+                for pos, euler in zip(
+                    [
+                        [self.target_limit * 2 + 0.2, 0, 0.0],
+                        [-self.target_limit * 2 - 0.2, 0, 0.0],
+                        [0, self.target_limit * 2 + 0.2, 0],
+                        [0, -self.target_limit * 2 - 0.2, 0],
+                    ],
+                    [
+                        [0, 0, 0],
+                        [0, 0, 0],
+                        [0, 0, math.pi / 2],
+                        [0, 0, math.pi / 2],
+                    ],
+                ):
+                    self._p.createMultiBody(
+                        0,
+                        wall_id,
+                        10,
+                        pos,
+                        self._p.getQuaternionFromEuler(euler),
                     )
-                    for i in range(0, self.num_objects):
-                        visId = p.createVisualShape(
-                            p.GEOM_BOX,
-                            halfExtents=[0.35, 0.35, 0.35],
-                            rgbaColor=colors[i],
-                        )
-                        self.objects.append(
-                            self._p.createMultiBody(0.1, colcubeId, visId, [0, 0, 1.5])
-                        )
 
                 if GUI:
                     ACTION_LIMIT = 1
@@ -444,13 +423,11 @@ class PointMassEnv(gym.GoalEnv):
                 distance = 7
                 yaw = 0
                 self._p.resetDebugVisualizerCamera(distance, yaw, -89, lookat)
-                colcubeId = self._p.createCollisionShape(
-                    p.GEOM_BOX, halfExtents=[5, 5, 0.1]
-                )
+                cybe = self._p.createCollisionShape(p.GEOM_BOX, halfExtents=[5, 5, 0.1])
                 visplaneId = self._p.createVisualShape(
                     p.GEOM_BOX, halfExtents=[5, 5, 0.1], rgbaColor=[1, 1, 1, 1]
                 )
-                self._p.createMultiBody(0, colcubeId, visplaneId, [0, 0, -0.2])
+                self._p.createMultiBody(0, cybe, visplaneId, [0, 0, -0.2])
 
             self._p.resetBasePositionAndOrientation(
                 self.mass, [0, 0, 0.6], [0, 0, 0, 1]
