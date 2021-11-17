@@ -12,7 +12,12 @@ import math
 
 GUI = False
 VIEW_MATRIX = p.computeViewMatrixFromYawPitchRoll(
-    cameraTargetPosition=[0, 0, 0], distance=6, yaw=0, pitch=-90, roll=0, upAxisIndex=2
+    cameraTargetPosition=[0, 0, 0],
+    distance=2,
+    yaw=0,
+    pitch=10,
+    roll=0,
+    upAxisIndex=2,
 )
 
 PROJECTION_MATRIX = p.computeProjectionMatrixFOV(
@@ -100,60 +105,6 @@ class PointMassEnv(gym.GoalEnv):
 
         self.goal = np.array(goal)
 
-        if self.is_render:
-            index = 0
-            for g in range(0, self.num_goals):
-                self._p.resetBasePositionAndOrientation(
-                    self.goals[g],
-                    [self.goal[index], self.goal[index + 1], 0.1],
-                    [0, 0, 0, 1],
-                )
-                self._p.changeConstraint(
-                    self.goal_cids[g],
-                    [self.goal[index], self.goal[index + 1], 0.1],
-                    maxForce=100,
-                )
-                index += 2
-
-    def reset_object_pos(self, obs=None, extra_info=None):
-        if obs is None:
-            index = 0
-            for obj in self.objects:
-                current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
-
-                pos = np.random.rand(3) * 4 - 2
-                while (
-                    self.calc_target_distance(
-                        pos[0:2], [self.goal[index], self.goal[index + 1]]
-                    )
-                    < 1
-                ):
-                    pos = pos + (np.random.rand(3) * 1) - 0.5
-                while (
-                    self.calc_target_distance(
-                        pos[0:2], [current_pos[0], current_pos[1]]
-                    )
-                    < 1
-                ):
-                    pos = pos + (np.random.rand(3) * 1) - 0.5
-                pos[2] = 0.4
-                ori = [0, 0, 0, 1]
-                obs_vel_x, obs_vel_y = 0, 0
-                self._p.resetBasePositionAndOrientation(obj, pos, ori)
-                self._p.resetBaseVelocity(obj, [obs_vel_x, obs_vel_y, 0])
-                index += 2
-        else:
-            starting_index = 4  # the first object index
-            for obj in self.objects:
-                obs_x, obs_y = obs[starting_index], obs[starting_index + 1]
-                obs_z = 0.4 if extra_info is None else extra_info[0]
-                pos = [obs_x, obs_y, obs_z]
-                ori = [0, 0, 0, 1] if extra_info is None else extra_info[1:5]
-                obs_vel_x, obs_vel_y = obs[starting_index + 2], obs[starting_index + 3]
-                self._p.resetBasePositionAndOrientation(obj, pos, ori)
-                self._p.resetBaseVelocity(obj, [obs_vel_x, obs_vel_y, 0])
-                starting_index += 4  # go the the next object in the observation
-
     def initialize_actor_pos(self, o):
         x, y, x_vel, y_vel = o[0], o[1], o[2], o[3]
         self._p.resetBasePositionAndOrientation(self.mass, [x, y, -0.1], [0, 0, 0, 1])
@@ -162,7 +113,7 @@ class PointMassEnv(gym.GoalEnv):
 
     # TODO change the env initialise start pos to a more general form of the function
 
-    def initialize_start_pos(self, o, extra_info=None):
+    def initialize_start_pos(self, o):
         if type(o) is dict:
             o = o["observation"]
         self.initialize_actor_pos(o)
@@ -196,10 +147,10 @@ class PointMassEnv(gym.GoalEnv):
 
         if self.is_render:
             img = p.getCameraImage(
-                48,
-                48,
-                VIEW_MATRIX,
-                PROJECTION_MATRIX,
+                width=48,
+                height=48,
+                viewMatrix=VIEW_MATRIX,
+                projectionMatrix=PROJECTION_MATRIX,
                 shadow=0,
                 flags=p.ER_NO_SEGMENTATION_MASK,
                 renderer=p.ER_BULLET_HARDWARE_OPENGL,
@@ -463,9 +414,9 @@ def main():
     forward = 0
     turn = 0
 
-    cameraDistance = 2
+    cameraDistance = 3
     cameraYaw = 35
-    cameraPitch = -65
+    cameraPitch = -45
     steps = 0
     while steps < 3000:
 
