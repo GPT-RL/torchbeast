@@ -33,14 +33,10 @@ class PointMassEnv(gym.GoalEnv):
         action_dim = 2
         obs_dim = 4
         self.env_bounds = 2.5  # LENGTH 6
-        self.num_objects = 0
 
-        self._max_episode_steps = 100 + self.num_objects * 100
+        self._max_episode_steps = 100
 
-        obs_dim += (
-            4 * self.num_objects
-        )  # pos and vel of the other pm that we are knocking around.
-        self.num_goals = max(self.num_objects, 1)
+        self.num_goals = 1
         goal_dim = 2 * self.num_goals
 
         high = np.ones([action_dim])
@@ -58,8 +54,8 @@ class PointMassEnv(gym.GoalEnv):
                     self.env_bounds * np.ones([action_dim]),
                 ),
                 full_positional_state=spaces.Box(
-                    -self.env_bounds * np.ones([action_dim + 2 * self.num_objects]),
-                    self.env_bounds * np.ones([action_dim + 2 * self.num_objects]),
+                    -self.env_bounds * np.ones([action_dim]),
+                    self.env_bounds * np.ones([action_dim]),
                 ),
             )
         )
@@ -168,8 +164,6 @@ class PointMassEnv(gym.GoalEnv):
         if type(o) is dict:
             o = o["observation"]
         self.initialize_actor_pos(o)
-        if self.num_objects > 0:
-            self.reset_object_pos(o, extra_info)
 
     def calc_state(self):
 
@@ -181,31 +175,10 @@ class PointMassEnv(gym.GoalEnv):
         # print(x_vel, y_vel)
         obs = [x, y, x_vel, y_vel]
 
-        achieved_goal = []
-        extra_info = []
-        if self.num_objects > 0:
-            for o in self.objects:
-                obj_pose = self._p.getBasePositionAndOrientation(o)
-                obs_x, obs_y = obj_pose[0][0], obj_pose[0][1]
-                velocity_obs = self._p.getBaseVelocity(o)[0]
-                x_vel_obj, y_vel_obj = velocity_obs[0], velocity_obs[1]
+        achieved_goal = np.array([x, y])
+        extra_info = None
 
-                obs += [obs_x, obs_y, x_vel_obj, y_vel_obj]
-                achieved_goal += [obs_x, obs_y]
-                extra_info += [list([obj_pose[0][2]] + list(obj_pose[1]))]
-
-            extra_info = np.squeeze(np.array(extra_info)).astype(
-                "float32"
-            )  # z pos of the object, ori quaternion of the object.
-
-        else:  # ag is the position of our controlled point mass
-            achieved_goal = np.array([x, y])
-            extra_info = None
-
-        if self.num_objects == 0:
-            full_positional_state = np.array([x, y])
-        else:
-            full_positional_state = np.array([x, y] + list(achieved_goal))
+        full_positional_state = np.array([x, y])
         return_dict = {
             "observation": np.array(obs).copy().astype("float32"),
             "achieved_goal": np.array(achieved_goal).copy().astype("float32"),
@@ -349,8 +322,6 @@ class PointMassEnv(gym.GoalEnv):
                     relativeChildOrientation,
                 )
 
-                alpha = 1
-
                 self.goals = []
                 self.goal_cids = []
 
@@ -456,8 +427,6 @@ class PointMassEnv(gym.GoalEnv):
             y_vel = 0  # self.np_random.uniform(low=-1, high=1)
 
             self.initialize_actor_pos([x, y, x_vel, y_vel])
-            if self.num_objects > 0:
-                self.reset_object_pos()
 
         obs = self.calc_state()
         self.last_target_distance = self.calc_target_distance(
