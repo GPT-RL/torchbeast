@@ -22,9 +22,9 @@ PROJECTION_MATRIX = p.computeProjectionMatrixFOV(
 @dataclass
 class PointMassEnv(gym.GoalEnv):
     metadata = {"render.modes": ["human", "rgb_array"], "video.frames_per_second": 60}
-    num_objects: int = (0,)
-    target_limit: float = (2,)
-    sparse_rew_thresh: float = (0.3,)
+    target_limit: float
+    sparse_rew_thresh: float
+    num_goals: int = 2
 
     def __post_init__(
         self,
@@ -33,6 +33,7 @@ class PointMassEnv(gym.GoalEnv):
         action_dim = 2
         obs_dim = 4
         self.env_bounds = 2.5  # LENGTH 6
+        self.num_objects = 0
 
         self._max_episode_steps = 100 + self.num_objects * 100
 
@@ -505,7 +506,7 @@ class PointMassEnv(gym.GoalEnv):
 
 
 def main():
-    env = PointMassEnv(num_objects=0, target_limit=1.3)
+    env = PointMassEnv(target_limit=2, sparse_rew_thresh=0.3)
     env.render(mode="human")
     env.reset()["observation"]
 
