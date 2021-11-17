@@ -28,8 +28,8 @@ PROJECTION_MATRIX = p.computeProjectionMatrixFOV(
 @dataclass
 class PointMassEnv(gym.GoalEnv):
     metadata = {"render.modes": ["human", "rgb_array"], "video.frames_per_second": 60}
-    target_limit: float
     sparse_rew_thresh: float
+    env_bounds: float = 2.5
     num_goals: int = 2
 
     def __post_init__(
@@ -38,7 +38,6 @@ class PointMassEnv(gym.GoalEnv):
 
         action_dim = 2
         obs_dim = 4
-        self.env_bounds = 2.5  # LENGTH 6
 
         self._max_episode_steps = 100
 
@@ -85,26 +84,6 @@ class PointMassEnv(gym.GoalEnv):
             num = -lim
         return num
 
-    def reset_goal_pos(self, goal: np.ndarray = None):
-        if goal is None:
-            goal = []
-            for g in range(0, self.num_goals):
-                goal_x = self.crop(
-                    self.np_random.uniform(
-                        low=-self.target_limit, high=self.target_limit
-                    ),
-                    self.target_min,
-                )
-                goal_y = self.crop(
-                    self.np_random.uniform(
-                        low=-self.target_limit, high=self.target_limit
-                    ),
-                    self.target_min,
-                )
-                goal += [goal_x, goal_y]
-
-        self.goal = np.array(goal)
-
     def initialize_actor_pos(self, o):
         x, y, x_vel, y_vel = o[0], o[1], o[2], o[3]
         self._p.resetBasePositionAndOrientation(self.mass, [x, y, -0.1], [0, 0, 0, 1])
@@ -125,25 +104,20 @@ class PointMassEnv(gym.GoalEnv):
         x, y = current_pos[0], current_pos[1]
         velocity = self._p.getBaseVelocity(self.mass)[0]
         x_vel, y_vel = velocity[0], velocity[1]
-        # print(x_vel, y_vel)
         obs = [x, y, x_vel, y_vel]
 
         achieved_goal = np.array([x, y])
         extra_info = None
 
         full_positional_state = np.array([x, y])
-        return_dict = {
-            "observation": np.array(obs).copy().astype("float32"),
-            "achieved_goal": np.array(achieved_goal).copy().astype("float32"),
-            "desired_goal": self.goal.copy().astype("float32"),
-            "extra_info": extra_info,
-            "controllable_achieved_goal": np.array([x, y])
-            .copy()
-            .astype(
-                "float32"
-            ),  # just the x,y pos of the pointmass, the controllable aspects
-            "full_positional_state": full_positional_state.astype("float32"),
-        }
+        return_dict = dict(
+            observation=np.array(obs).copy().astype("float32"),
+            achieved_goal=np.array(achieved_goal).copy().astype("float32"),
+            desired_goal=np.zeros(2).astype("float32"),
+            extra_info=extra_info,
+            controllable_achieved_goal=np.array([x, y]).copy().astype("float32"),
+            full_positional_state=full_positional_state.astype("float32"),
+        )
 
         if self.is_render:
             img = p.getCameraImage(
@@ -167,15 +141,11 @@ class PointMassEnv(gym.GoalEnv):
     def compute_reward(
         self, achieved_goal: np.ndarray, desired_goal: np.ndarray, info=None
     ):
-
         # reward given if new pos is closer than old
-
         current_distance = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
-
         position_reward = -1000 * (current_distance - self.last_target_distance)
         self.last_target_distance = current_distance
-
-        return position_reward  # +velocity_reward
+        return position_reward
 
     def compute_reward_sparse(self, achieved_goal, desired_goal):
 
@@ -203,14 +173,11 @@ class PointMassEnv(gym.GoalEnv):
 
     def step(self, action: np.ndarray):
 
-        action = action * 0.1  # put it to the correct scale
-        x_shift, y_shift = action[0], action[1]
-        current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
-        x, y = current_pos[0], current_pos[1]
+        x_shift, y_shift, *_ = action * 0.1  # put it to the correct scale
+        x, y, *_ = self._p.getBasePositionAndOrientation(self.mass)[0]
 
-        new_x, new_y = np.clip(x + x_shift, -self.env_bounds, self.env_bounds), np.clip(
-            y + y_shift, -self.env_bounds, self.env_bounds
-        )
+        new_x = np.clip(x + x_shift, -2 * self.env_bounds, 2 * self.env_bounds)
+        new_y = np.clip(y + y_shift, -2 * self.env_bounds, 2 * self.env_bounds)
         self._p.changeConstraint(self.mass_cid, [new_x, new_y, -0.1], maxForce=10)
 
         for i in range(0, 20):
@@ -282,10 +249,7 @@ class PointMassEnv(gym.GoalEnv):
 
                     urdf = self.np_random.choice(self.urdfs)
 
-                    goal = p.loadURDF(urdf, basePosition=[0.5, 0, 0])
-                    # startPos = [0.5, 0, 0]
-                    # startOrientation = p.getQuaternionFromEuler([0, 0, 0])
-                    # p.resetBasePositionAndOrientation(goal, startPos, startOrientation)
+                    goal = p.loadURDF(urdf, basePosition=[0.5, 0, 0.5])
 
                     self.goals.append(goal)
                     collisionFilterGroup = 0
@@ -308,14 +272,14 @@ class PointMassEnv(gym.GoalEnv):
                     )
 
                 wall_id = self._p.createCollisionShape(
-                    p.GEOM_BOX, halfExtents=[0.05, 2.5, 0.5]
+                    p.GEOM_BOX, halfExtents=[0.05, self.env_bounds, 0.5]
                 )
                 for pos, euler in zip(
                     [
-                        [self.target_limit * 2 + 0.2, 0, 0.0],
-                        [-self.target_limit * 2 - 0.2, 0, 0.0],
-                        [0, self.target_limit * 2 + 0.2, 0],
-                        [0, -self.target_limit * 2 - 0.2, 0],
+                        [self.env_bounds, 0, 0.0],
+                        [-self.env_bounds, 0, 0.0],
+                        [0, self.env_bounds, 0],
+                        [0, -self.env_bounds, 0],
                     ],
                     [
                         [0, 0, 0],
@@ -357,25 +321,16 @@ class PointMassEnv(gym.GoalEnv):
             self._p.resetBasePositionAndOrientation(
                 self.mass, [0, 0, 0.6], [0, 0, 0, 1]
             )
-            self.reset_goal_pos()
 
             # reset mass location
-            if self.opposite_goal:
-                x = -self.goal[0]
-                y = -self.goal[1]
-            else:
-                x = self.crop(
-                    self.np_random.uniform(
-                        low=-self.target_limit, high=self.target_limit
-                    ),
-                    self.target_min,
-                )
-                y = self.crop(
-                    self.np_random.uniform(
-                        low=-self.target_limit, high=self.target_limit
-                    ),
-                    self.target_min,
-                )
+            x = self.crop(
+                self.np_random.uniform(low=-self.env_bounds, high=self.env_bounds),
+                self.target_min,
+            )
+            y = self.crop(
+                self.np_random.uniform(low=-self.env_bounds, high=self.env_bounds),
+                self.target_min,
+            )
 
             x_vel = 0  # self.np_random.uniform(low=-1, high=1)
             y_vel = 0  # self.np_random.uniform(low=-1, high=1)
@@ -407,7 +362,7 @@ class PointMassEnv(gym.GoalEnv):
 
 
 def main():
-    env = PointMassEnv(target_limit=2, sparse_rew_thresh=0.3)
+    env = PointMassEnv(sparse_rew_thresh=0.3)
     env.render(mode="human")
     env.reset()["observation"]
 
