@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 
 import gym, gym.utils, gym.utils.seeding
 import pybullet as p
@@ -43,6 +44,7 @@ class PointMassEnv(gym.GoalEnv):
         self.action_space = spaces.Box(-high, high)
         high_obs = self.env_bounds * np.ones([obs_dim])
         high_goal = self.env_bounds * np.ones([goal_dim])
+        self.urdfs = [str(u) for u in Path("dataset").glob("*/mobility.urdf")]
 
         self.observation_space = spaces.Dict(
             dict(
@@ -326,12 +328,13 @@ class PointMassEnv(gym.GoalEnv):
                 self.goal_cids = []
 
                 for g in range(0, self.num_goals):
-                    goal = p.loadURDF(
-                        "/Users/ethanbrooks/torchbeast/dataset/100015/mobility.urdf"
-                    )
-                    startPos = [0.5, 0, 0]
-                    startOrientation = p.getQuaternionFromEuler([0, 0, 0])
-                    p.resetBasePositionAndOrientation(goal, startPos, startOrientation)
+
+                    urdf = self.np_random.choice(self.urdfs)
+
+                    goal = p.loadURDF(urdf, basePosition=[0.5, 0, 0])
+                    # startPos = [0.5, 0, 0]
+                    # startOrientation = p.getQuaternionFromEuler([0, 0, 0])
+                    # p.resetBasePositionAndOrientation(goal, startPos, startOrientation)
 
                     self.goals.append(goal)
                     collisionFilterGroup = 0
