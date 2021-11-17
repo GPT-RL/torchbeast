@@ -1,21 +1,19 @@
 import gym, gym.utils, gym.utils.seeding
 import pybullet as p
 import numpy as np
-import pybullet_data
 import time
 from pybullet_utils import bullet_client
 
-urdfRoot = pybullet_data.getDataPath()
 import gym.spaces as spaces
 import math
 
 GUI = False
-viewMatrix = p.computeViewMatrixFromYawPitchRoll(
+VIEW_MATRIX = p.computeViewMatrixFromYawPitchRoll(
     cameraTargetPosition=[0, 0, 0], distance=6, yaw=0, pitch=-90, roll=0, upAxisIndex=2
 )
 
 
-projectionMatrix = p.computeProjectionMatrixFOV(
+PROJECTION_MATRIX = p.computeProjectionMatrixFOV(
     fov=50, aspect=1, nearVal=0.01, farVal=10
 )
 
@@ -26,10 +24,9 @@ class pointMassEnv(gym.GoalEnv):
 
     def __init__(
         self,
-        render=False,
         num_objects=0,
         sparse=True,
-        TARG_LIMIT=2,
+        target_limit=2,
         sparse_rew_thresh=0.3,
         pointMaze=False,
         deterministic_pos=False,
@@ -78,7 +75,7 @@ class pointMassEnv(gym.GoalEnv):
         self.physics_client_active = 0
         self.movable_goal = False
         self.roving_goal = False
-        self.TARG_LIMIT = TARG_LIMIT
+        self.TARG_LIMIT = target_limit
         self.TARG_MIN = 0.1
         self._seed()
         self.global_step = 0
@@ -381,8 +378,8 @@ class pointMassEnv(gym.GoalEnv):
             img = p.getCameraImage(
                 48,
                 48,
-                viewMatrix,
-                projectionMatrix,
+                VIEW_MATRIX,
+                PROJECTION_MATRIX,
                 shadow=0,
                 flags=p.ER_NO_SEGMENTATION_MASK,
                 renderer=p.ER_BULLET_HARDWARE_OPENGL,
@@ -763,9 +760,11 @@ class pointMassEnv(gym.GoalEnv):
 # a version where reward is determined by the obstacle.
 # need a sub class so we can load it as a openai gym env.
 class pointMassEnvObject(pointMassEnv):
-    def __init__(self, render=False, num_objects=1, sparse=True, TARG_LIMIT=1.3):
+    def __init__(self, render=False, num_objects=1, sparse=True, target_limit=1.3):
         super().__init__(
-            render=render, num_objects=num_objects, sparse=sparse, TARG_LIMIT=TARG_LIMIT
+            num_objects=num_objects,
+            sparse=sparse,
+            target_limit=target_limit,
         )
 
 
@@ -775,39 +774,41 @@ class pointMassEnvObjectDuo(pointMassEnv):
         render=False,
         num_objects=2,
         sparse=True,
-        TARG_LIMIT=1.3,
+        target_limit=1.3,
         sparse_rew_thresh=0.3,  # TODO 6 when collecting examples.
     ):
         super().__init__(
-            render=render,
             num_objects=num_objects,
             sparse=sparse,
-            TARG_LIMIT=TARG_LIMIT,
+            target_limit=target_limit,
             sparse_rew_thresh=sparse_rew_thresh,
         )
 
 
 class pointMassEnvObjectDense(pointMassEnv):
-    def __init__(self, render=False, num_objects=1, sparse=False, TARG_LIMIT=1.3):
+    def __init__(self, render=False, num_objects=1, sparse=False, target_limit=1.3):
         super().__init__(
-            render=render, num_objects=num_objects, sparse=sparse, TARG_LIMIT=TARG_LIMIT
+            num_objects=num_objects,
+            sparse=sparse,
+            target_limit=target_limit,
         )
 
 
 class pointMassEnvDense(pointMassEnv):
-    def __init__(self, render=False, num_objects=0, sparse=False, TARG_LIMIT=1.3):
+    def __init__(self, render=False, num_objects=0, sparse=False, target_limit=1.3):
         super().__init__(
-            render=render, num_objects=num_objects, sparse=sparse, TARG_LIMIT=TARG_LIMIT
+            num_objects=num_objects,
+            sparse=sparse,
+            target_limit=target_limit,
         )
 
 
 class pointMassEnvMaze(pointMassEnv):
-    def __init__(self, render=False, num_objects=0, sparse=True, TARG_LIMIT=1.3):
+    def __init__(self, render=False, num_objects=0, sparse=True, target_limit=1.3):
         super().__init__(
-            render=render,
             num_objects=num_objects,
             sparse=sparse,
-            TARG_LIMIT=TARG_LIMIT,
+            target_limit=target_limit,
             pointMaze=True,
             deterministic_pos=True,
         )
