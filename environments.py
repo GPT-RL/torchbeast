@@ -67,15 +67,11 @@ class PointMassEnv(gym.GoalEnv):
         self.gui_active = False
         self._p = p
         self.physics_client_active = 0
-        self.movable_goal = False
-        self.roving_goal = False
         self.target_min = 0.1
         self._seed()
         self.global_step = 0
         self.opposite_goal = False
         self.objects = []
-        self.state_representation = None
-        self.sub_goals = None
 
     @staticmethod
     def crop(num, lim):
@@ -205,9 +201,6 @@ class PointMassEnv(gym.GoalEnv):
             achieved_goal = np.array([x, y])
             extra_info = None
 
-        # if self.state_representation:
-        # 	obs = np.squeeze(self.state_representation(np.expand_dims(obs,0))[0].numpy())
-
         if self.num_objects == 0:
             full_positional_state = np.array([x, y])
         else:
@@ -299,15 +292,6 @@ class PointMassEnv(gym.GoalEnv):
         obs = self.calc_state()
 
         r = self.compute_reward(obs["achieved_goal"], obs["desired_goal"])
-
-        if self.movable_goal:
-
-            if r == 0:
-                self.reset_goal_pos()
-
-        if self.roving_goal:
-            if self.global_step % 150 == 0:
-                self.reset_goal_pos()
 
         self.global_step += 1
 
