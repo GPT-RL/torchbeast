@@ -350,18 +350,19 @@ class PointMassEnv(gym.GoalEnv):
                 )
 
                 alpha = 1
-                colors = [[0, 1, 0, alpha], [0, 0, 1, alpha]]
 
                 self.goals = []
                 self.goal_cids = []
 
                 for g in range(0, self.num_goals):
-                    visId = p.createVisualShape(
-                        p.GEOM_SPHERE, radius=sphereRadius, rgbaColor=colors[g]
+                    goal = p.loadURDF(
+                        "/Users/ethanbrooks/torchbeast/dataset/100015/mobility.urdf"
                     )
-                    self.goals.append(
-                        self._p.createMultiBody(mass, colSphereId, visId, [1, 1, 1.4])
-                    )
+                    startPos = [0.5, 0, 0]
+                    startOrientation = p.getQuaternionFromEuler([0, 0, 0])
+                    p.resetBasePositionAndOrientation(goal, startPos, startOrientation)
+
+                    self.goals.append(goal)
                     collisionFilterGroup = 0
                     collisionFilterMask = 0
                     self._p.setCollisionFilterGroupMask(
