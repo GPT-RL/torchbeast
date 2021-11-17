@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import gym, gym.utils, gym.utils.seeding
 import pybullet as p
 import numpy as np
@@ -17,37 +19,33 @@ PROJECTION_MATRIX = p.computeProjectionMatrixFOV(
 )
 
 
+@dataclass
 class PointMassEnv(gym.GoalEnv):
     metadata = {"render.modes": ["human", "rgb_array"], "video.frames_per_second": 60}
+    num_objects: int = (0,)
+    target_limit: float = (2,)
+    sparse_rew_thresh: float = (0.3,)
 
-    def __init__(
+    def __post_init__(
         self,
-        num_objects: int = 0,
-        sparse: bool = True,
-        target_limit: float = 2,
-        sparse_rew_thresh: float = 0.3,
-        pointMaze: bool = False,
-        deterministic_pos: bool = False,
     ):
-        self.num_objects = num_objects
 
         action_dim = 2
         obs_dim = 4
-        self.ENVIRONMENT_BOUNDS = 2.5  # LENGTH 6
-        self.sparse_rew_thresh = sparse_rew_thresh
+        self.env_bounds = 2.5  # LENGTH 6
 
-        self._max_episode_steps = 100 + num_objects * 100
+        self._max_episode_steps = 100 + self.num_objects * 100
 
         obs_dim += (
-            4 * num_objects
+            4 * self.num_objects
         )  # pos and vel of the other pm that we are knocking around.
-        self.num_goals = max(num_objects, 1)
+        self.num_goals = max(self.num_objects, 1)
         goal_dim = 2 * self.num_goals
 
         high = np.ones([action_dim])
         self.action_space = spaces.Box(-high, high)
-        high_obs = self.ENVIRONMENT_BOUNDS * np.ones([obs_dim])
-        high_goal = self.ENVIRONMENT_BOUNDS * np.ones([goal_dim])
+        high_obs = self.env_bounds * np.ones([obs_dim])
+        high_goal = self.env_bounds * np.ones([goal_dim])
 
         self.observation_space = spaces.Dict(
             dict(
@@ -55,14 +53,12 @@ class PointMassEnv(gym.GoalEnv):
                 achieved_goal=spaces.Box(-high_goal, high_goal),
                 observation=spaces.Box(-high_obs, high_obs),
                 controllable_achieved_goal=spaces.Box(
-                    -self.ENVIRONMENT_BOUNDS * np.ones([action_dim]),
-                    self.ENVIRONMENT_BOUNDS * np.ones([action_dim]),
+                    -self.env_bounds * np.ones([action_dim]),
+                    self.env_bounds * np.ones([action_dim]),
                 ),
                 full_positional_state=spaces.Box(
-                    -self.ENVIRONMENT_BOUNDS
-                    * np.ones([action_dim + 2 * self.num_objects]),
-                    self.ENVIRONMENT_BOUNDS
-                    * np.ones([action_dim + 2 * self.num_objects]),
+                    -self.env_bounds * np.ones([action_dim + 2 * self.num_objects]),
+                    self.env_bounds * np.ones([action_dim + 2 * self.num_objects]),
                 ),
             )
         )
@@ -73,21 +69,13 @@ class PointMassEnv(gym.GoalEnv):
         self.physics_client_active = 0
         self.movable_goal = False
         self.roving_goal = False
-        self.target_limit = target_limit
         self.target_min = 0.1
         self._seed()
         self.global_step = 0
         self.opposite_goal = False
-        self.show_goal = True
         self.objects = []
-        self.num_objects = num_objects
         self.state_representation = None
         self.sub_goals = None
-        self.pointMaze = pointMaze
-        self.deterministic_pos = deterministic_pos
-
-        if sparse:
-            self.set_sparse_reward()
 
     @staticmethod
     def crop(num, lim):
@@ -113,37 +101,26 @@ class PointMassEnv(gym.GoalEnv):
                     ),
                     self.target_min,
                 )
-                if self.pointMaze:
-                    if self.deterministic_pos:
-                        goal_x, goal_y = -0.6, 1.5
-                    else:
-                        goal_x = self.np_random.uniform(
-                            low=-self.target_limit, high=-1.5
-                        )
-                        goal_y = self.np_random.uniform(low=0.4, high=self.target_limit)
-
                 goal += [goal_x, goal_y]
 
         self.goal = np.array(goal)
 
         if self.is_render:
-            if self.show_goal:
-                index = 0
-                for g in range(0, self.num_goals):
-                    self._p.resetBasePositionAndOrientation(
-                        self.goals[g],
-                        [self.goal[index], self.goal[index + 1], 0.1],
-                        [0, 0, 0, 1],
-                    )
-                    self._p.changeConstraint(
-                        self.goal_cids[g],
-                        [self.goal[index], self.goal[index + 1], 0.1],
-                        maxForce=100,
-                    )
-                    index += 2
+            index = 0
+            for g in range(0, self.num_goals):
+                self._p.resetBasePositionAndOrientation(
+                    self.goals[g],
+                    [self.goal[index], self.goal[index + 1], 0.1],
+                    [0, 0, 0, 1],
+                )
+                self._p.changeConstraint(
+                    self.goal_cids[g],
+                    [self.goal[index], self.goal[index + 1], 0.1],
+                    maxForce=100,
+                )
+                index += 2
 
     def reset_object_pos(self, obs=None, extra_info=None):
-
         if obs is None:
             index = 0
             for obj in self.objects:
@@ -196,88 +173,6 @@ class PointMassEnv(gym.GoalEnv):
         self.initialize_actor_pos(o)
         if self.num_objects > 0:
             self.reset_object_pos(o, extra_info)
-
-    def visualise_sub_goal(self, sub_goal, sub_goal_state="achieved_goal"):
-
-        # in the sub_goal case we either only  have the positional info, or we have the full state positional info.
-        # print(sub_goal)
-        index = 0
-        if self.sub_goals is None:
-            self.sub_goals = []
-            self.sub_goal_cids = []
-            print("initing")
-            sphereRadius = 0.15
-            mass = 1
-            colSphereId = self._p.createCollisionShape(
-                p.GEOM_SPHERE, radius=sphereRadius
-            )
-            relativeChildPosition = [0, 0, 0]
-            relativeChildOrientation = [0, 0, 0, 1]
-            alpha = 0.5
-            colors = [
-                [212 / 250, 175 / 250, 55 / 250, alpha],
-                [0, 1, 0, alpha],
-                [0, 0, 1, alpha],
-            ]
-            if sub_goal_state is "achieved_goal":
-                colors = [[0, 1, 0, alpha], [0, 0, 1, alpha]]
-
-            for g in range(0, len(sub_goal) // 2):
-                if (
-                    g == 0 and sub_goal_state is not "achieved_goal"
-                ):  # all other ones include sphere
-                    # the sphere
-                    visId = p.createVisualShape(
-                        p.GEOM_SPHERE, radius=sphereRadius, rgbaColor=colors[g]
-                    )
-                else:
-
-                    visId = p.createVisualShape(
-                        p.GEOM_BOX, halfExtents=[0.35, 0.35, 0.35], rgbaColor=colors[g]
-                    )
-
-                self.sub_goals.append(
-                    self._p.createMultiBody(
-                        mass,
-                        colSphereId,
-                        visId,
-                        [sub_goal[index], sub_goal[index + 1], 0.1],
-                    )
-                )
-                collisionFilterGroup = 0
-                collisionFilterMask = 0
-                self._p.setCollisionFilterGroupMask(
-                    self.sub_goals[g], -1, collisionFilterGroup, collisionFilterMask
-                )
-                self.sub_goal_cids.append(
-                    self._p.createConstraint(
-                        self.sub_goals[g],
-                        -1,
-                        -1,
-                        -1,
-                        self._p.JOINT_FIXED,
-                        [sub_goal[index], sub_goal[index + 1], 0.1],
-                        [0, 0, 0.1],
-                        relativeChildPosition,
-                        relativeChildOrientation,
-                    )
-                )
-                index += 2
-
-        else:
-
-            for g in range(0, len(sub_goal) // 2):
-                self._p.resetBasePositionAndOrientation(
-                    self.sub_goals[g],
-                    [sub_goal[index], sub_goal[index + 1], 0.1],
-                    [0, 0, 0, 1],
-                )
-                self._p.changeConstraint(
-                    self.sub_goal_cids[g],
-                    [sub_goal[index], sub_goal[index + 1], 0.1],
-                    maxForce=100,
-                )
-                index += 2
 
     def calc_state(self):
 
@@ -349,28 +244,18 @@ class PointMassEnv(gym.GoalEnv):
         distance = np.sum(abs(achieved_goal - desired_goal))
         return distance
 
-    def activate_movable_goal(self):
-        self.movable_goal = True
-
-    def activate_roving_goal(self):
-        self.roving_goal = True
-
     def compute_reward(
         self, achieved_goal: np.ndarray, desired_goal: np.ndarray, info=None
     ):
 
         # reward given if new pos is closer than old
 
-        current_distance = np.linalg.norm(achieved_goal - desired_goal, axis=1)
+        current_distance = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
 
         position_reward = -1000 * (current_distance - self.last_target_distance)
         self.last_target_distance = current_distance
 
         return position_reward  # +velocity_reward
-
-    def set_sparse_reward(self):
-        print("Environment set to sparse reward")
-        self.compute_reward = self.compute_reward_sparse
 
     def compute_reward_sparse(self, achieved_goal, desired_goal):
 
@@ -403,9 +288,9 @@ class PointMassEnv(gym.GoalEnv):
         current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
         x, y = current_pos[0], current_pos[1]
 
-        new_x, new_y = np.clip(
-            x + x_shift, -self.ENVIRONMENT_BOUNDS, self.ENVIRONMENT_BOUNDS
-        ), np.clip(y + y_shift, -self.ENVIRONMENT_BOUNDS, self.ENVIRONMENT_BOUNDS)
+        new_x, new_y = np.clip(x + x_shift, -self.env_bounds, self.env_bounds), np.clip(
+            y + y_shift, -self.env_bounds, self.env_bounds
+        )
         self._p.changeConstraint(self.mass_cid, [new_x, new_y, -0.1], maxForce=10)
 
         for i in range(0, 20):
@@ -482,37 +367,34 @@ class PointMassEnv(gym.GoalEnv):
                 alpha = 1
                 colors = [[0, 1, 0, alpha], [0, 0, 1, alpha]]
 
-                if self.show_goal:
-                    self.goals = []
-                    self.goal_cids = []
+                self.goals = []
+                self.goal_cids = []
 
-                    for g in range(0, self.num_goals):
-                        visId = p.createVisualShape(
-                            p.GEOM_SPHERE, radius=sphereRadius, rgbaColor=colors[g]
+                for g in range(0, self.num_goals):
+                    visId = p.createVisualShape(
+                        p.GEOM_SPHERE, radius=sphereRadius, rgbaColor=colors[g]
+                    )
+                    self.goals.append(
+                        self._p.createMultiBody(mass, colSphereId, visId, [1, 1, 1.4])
+                    )
+                    collisionFilterGroup = 0
+                    collisionFilterMask = 0
+                    self._p.setCollisionFilterGroupMask(
+                        self.goals[g], -1, collisionFilterGroup, collisionFilterMask
+                    )
+                    self.goal_cids.append(
+                        self._p.createConstraint(
+                            self.goals[g],
+                            -1,
+                            -1,
+                            -1,
+                            self._p.JOINT_FIXED,
+                            [1, 1, 1.4],
+                            [0, 0, 0],
+                            relativeChildPosition,
+                            relativeChildOrientation,
                         )
-                        self.goals.append(
-                            self._p.createMultiBody(
-                                mass, colSphereId, visId, [1, 1, 1.4]
-                            )
-                        )
-                        collisionFilterGroup = 0
-                        collisionFilterMask = 0
-                        self._p.setCollisionFilterGroupMask(
-                            self.goals[g], -1, collisionFilterGroup, collisionFilterMask
-                        )
-                        self.goal_cids.append(
-                            self._p.createConstraint(
-                                self.goals[g],
-                                -1,
-                                -1,
-                                -1,
-                                self._p.JOINT_FIXED,
-                                [1, 1, 1.4],
-                                [0, 0, 0],
-                                relativeChildPosition,
-                                relativeChildOrientation,
-                            )
-                        )
+                    )
 
                 colwallId = self._p.createCollisionShape(
                     p.GEOM_BOX, halfExtents=[0.05, 2.5, 0.5]
@@ -545,28 +427,6 @@ class PointMassEnv(gym.GoalEnv):
                     [0, -self.target_limit * 2 - 0.2, 0],
                     p.getQuaternionFromEuler([0, 0, math.pi / 2]),
                 )
-
-                if self.pointMaze:
-                    divider = self._p.createCollisionShape(
-                        p.GEOM_BOX, halfExtents=[0.7, 1.2, 0.5]
-                    )
-                    self._p.createMultiBody(
-                        0,
-                        divider,
-                        10,
-                        [-0.8, 0, 0],
-                        p.getQuaternionFromEuler([0, 0, math.pi / 2]),
-                    )
-                    divider = self._p.createCollisionShape(
-                        p.GEOM_BOX, halfExtents=[1.5, 0.6, 0.5]
-                    )
-                    self._p.createMultiBody(
-                        0,
-                        divider,
-                        10,
-                        [-1.4, 1.1, 0],
-                        p.getQuaternionFromEuler([0, 0, math.pi / 2]),
-                    )
 
                 if self.num_objects > 0:
                     colcubeId = self._p.createCollisionShape(
@@ -628,9 +488,6 @@ class PointMassEnv(gym.GoalEnv):
                     ),
                     self.target_min,
                 )
-                if self.pointMaze:
-                    x = self.np_random.uniform(low=-2.0, high=-1.5)
-                    y = self.np_random.uniform(low=-2.0, high=-1.5)
 
             x_vel = 0  # self.np_random.uniform(low=-1, high=1)
             y_vel = 0  # self.np_random.uniform(low=-1, high=1)
@@ -639,23 +496,11 @@ class PointMassEnv(gym.GoalEnv):
             if self.num_objects > 0:
                 self.reset_object_pos()
 
-            # self.last_velocity_distance = self.calc_velocity_distance()
-
-            # Instantiate some obstacles.
-            # self.instaniate_obstacles()
         obs = self.calc_state()
         self.last_target_distance = self.calc_target_distance(
             obs["achieved_goal"], obs["desired_goal"]
         )
         return obs
-
-    def instantiate_obstacles(self):
-        col_cube_id = self._p.createCollisionShape(
-            p.GEOM_BOX, halfExtents=[1.5, 1.5, 0.6]
-        )
-        self.obstacle_center = self._p.createMultiBody(0, col_cube_id, 2, [0, 0, 0.0])
-        self.target_min = 1.5
-        self.opposite_goal = True
 
     def render(self, mode="human"):
 
@@ -672,23 +517,11 @@ class PointMassEnv(gym.GoalEnv):
     def _seed(self, seed=None):
         print("seeding")
         self.np_random, seed = gym.utils.seeding.np_random(seed)
-
         return [seed]
 
 
-class pointMassEnvMaze(PointMassEnv):
-    def __init__(self, num_objects=0, sparse=True, target_limit=1.3):
-        super().__init__(
-            num_objects=num_objects,
-            sparse=sparse,
-            target_limit=target_limit,
-            pointMaze=True,
-            deterministic_pos=True,
-        )
-
-
 def main():
-    env = pointMassEnvMaze()
+    env = PointMassEnv(num_objects=0, target_limit=1.3)
     env.render(mode="human")
     env.reset()["observation"]
 
