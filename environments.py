@@ -30,7 +30,6 @@ class PointMassEnv(gym.GoalEnv):
     metadata = {"render.modes": ["human", "rgb_array"], "video.frames_per_second": 60}
     sparse_rew_thresh: float
     env_bounds: float = 2.5
-    num_goals: int = 2
 
     def __post_init__(
         self,
@@ -41,8 +40,7 @@ class PointMassEnv(gym.GoalEnv):
 
         self._max_episode_steps = 100
 
-        self.num_goals = 1
-        goal_dim = 2 * self.num_goals
+        goal_dim = 2 * 2
 
         high = np.ones([action_dim])
         self.action_space = spaces.Box(-high, high)
@@ -244,12 +242,15 @@ class PointMassEnv(gym.GoalEnv):
 
                 self.goal_cids = []
 
-                for g in range(0, self.num_goals):
+                for base_position in [
+                    [self.env_bounds, self.env_bounds, 0],
+                    [-self.env_bounds, -self.env_bounds, 0],
+                ]:
 
                     urdf = self.np_random.choice(self.urdfs)
 
                     goal = p.loadURDF(
-                        urdf, basePosition=[0.5, 0.0, 0.5], useFixedBase=True
+                        urdf, basePosition=base_position, useFixedBase=True
                     )
 
                     collisionFilterGroup = 0
