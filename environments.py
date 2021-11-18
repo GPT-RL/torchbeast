@@ -207,7 +207,13 @@ class PointMassEnv(gym.GoalEnv):
         yield s, r, t, {}
 
     def apply_action(self, action):
-        x_shift, y_shift, *_ = action * 0.1  # put it to the correct scale
+
+        forward, turn, camForward, cameraYaw = action
+        force = np.array([forward * camForward[0], forward * camForward[1], 0])
+
+        time.sleep(3.0 / 240.0)
+
+        x_shift, y_shift, *_ = force * 0.1  # put it to the correct scale
         x, y, *_ = self._p.getBasePositionAndOrientation(self.mass)[0]
         new_x = np.clip(x + x_shift, -2 * self.env_bounds, 2 * self.env_bounds)
         new_y = np.clip(y + y_shift, -2 * self.env_bounds, 2 * self.env_bounds)
@@ -345,12 +351,9 @@ def main():
                 if down_release:
                     forward = 0
 
-            force = [forward * camForward[0], forward * camForward[1], 0]
             cameraYaw = cameraYaw + turn
 
-            time.sleep(3.0 / 240.0)
-
-            o, r, t, _ = env.step(np.array(force))
+            o, r, t, _ = env.step((forward, turn, camForward, cameraYaw))
             if t:
                 env.reset()
             # print(o["observation"][0:2])  # print(r)
