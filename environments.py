@@ -175,15 +175,6 @@ class PointMassEnv(gym.GoalEnv):
             )
         self.mission = self.np_random.choice(missions)
 
-        if GUI:
-            ACTION_LIMIT = 1
-            self.x_shift = self._p.addUserDebugParameter(
-                "X", -ACTION_LIMIT, ACTION_LIMIT, 0.0
-            )
-            self.y_shift = self._p.addUserDebugParameter(
-                "Y", -ACTION_LIMIT, ACTION_LIMIT, 0.0
-            )
-
         self._p.configureDebugVisualizer(p.COV_ENABLE_GUI, GUI)
 
         self._p.setGravity(0, 0, -10)
