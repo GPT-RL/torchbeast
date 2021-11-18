@@ -83,7 +83,7 @@ class PointMassEnv(gym.GoalEnv):
         return num
 
     def initialize_actor_pos(self, o):
-        x, y, x_vel, y_vel = o[0], o[1], o[2], o[3]
+        x, y, x_vel, y_vel = o
         self._p.resetBasePositionAndOrientation(self.mass, [x, y, -0.1], [0, 0, 0, 1])
         self._p.changeConstraint(self.mass_cid, [x, y, -0.1], maxForce=100)
         self._p.resetBaseVelocity(self.mass, [x_vel, y_vel, 0])
@@ -202,6 +202,7 @@ class PointMassEnv(gym.GoalEnv):
 
     def reset(self, o=None):
         if o is not None:
+            breakpoint()
             self.initialize_start_pos(o)
         else:
             self.global_step = 0
@@ -297,21 +298,6 @@ class PointMassEnv(gym.GoalEnv):
             self._p.resetBasePositionAndOrientation(
                 self.mass, [0, 0, 0.6], [0, 0, 0, 1]
             )
-
-            # reset mass location
-            x = self.crop(
-                self.np_random.uniform(low=-self.env_bounds, high=self.env_bounds),
-                self.target_min,
-            )
-            y = self.crop(
-                self.np_random.uniform(low=-self.env_bounds, high=self.env_bounds),
-                self.target_min,
-            )
-
-            x_vel = 0  # self.np_random.uniform(low=-1, high=1)
-            y_vel = 0  # self.np_random.uniform(low=-1, high=1)
-
-            self.initialize_actor_pos([x, y, x_vel, y_vel])
 
         obs = self.calc_state()
         self.last_target_distance = self.calc_target_distance(
