@@ -89,32 +89,8 @@ class PointMassEnv(gym.GoalEnv):
         self.gui_active = False
         self._p = p
         self.physics_client_active = 0
-        self.target_min = 0.1
         self._seed()
         self.global_step = 0
-        self.opposite_goal = False
-        self.objects = []
-
-    @staticmethod
-    def crop(num, lim):
-        if 0 <= num < lim:
-            num = lim
-        elif 0 > num > -lim:
-            num = -lim
-        return num
-
-    def initialize_actor_pos(self, o):
-        x, y, x_vel, y_vel = o
-        self._p.resetBasePositionAndOrientation(self.mass, [x, y, -0.1], [0, 0, 0, 1])
-        self._p.changeConstraint(self.mass_cid, [x, y, -0.1], maxForce=100)
-        self._p.resetBaseVelocity(self.mass, [x_vel, y_vel, 0])
-
-    # TODO change the env initialise start pos to a more general form of the function
-
-    def initialize_start_pos(self, o):
-        if isinstance(o, dict):
-            o = o["observation"]
-        self.initialize_actor_pos(o)
 
     def get_observation(self):
         (_, _, rgbPixels, _, _,) = p.getCameraImage(
@@ -131,16 +107,6 @@ class PointMassEnv(gym.GoalEnv):
             image=rgbPixels.astype(np.float32),
             mission=self.tokens[self.mission],
         )
-
-    @staticmethod
-    def calc_target_distance(achieved_goal, desired_goal):
-        distance = np.sum(abs(achieved_goal - desired_goal))
-        return distance
-
-    def compute_reward(
-        self, achieved_goal: np.ndarray, desired_goal: np.ndarray, info=None
-    ):
-        return 0
 
     def compute_reward_sparse(self, achieved_goal, desired_goal):
 
