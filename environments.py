@@ -139,6 +139,7 @@ class PointMassEnv(gym.GoalEnv):
     def generator(self):
         missions = []
         goals = []
+        self.cameraYaw = 35
 
         for base_position in [
             [self.env_bounds, self.env_bounds, 0],
@@ -208,7 +209,13 @@ class PointMassEnv(gym.GoalEnv):
 
     def apply_action(self, action):
 
-        forward, turn, camForward, cameraYaw = action
+        forward, turn, camForward, _cameraYaw = action
+        print("self.cameraYaw before", self.cameraYaw)
+        print("turn", turn)
+        if not self.cameraYaw == _cameraYaw:
+            breakpoint()
+        self.cameraYaw += turn
+        print("self.cameraYaw after", self.cameraYaw)
         force = np.array([forward * camForward[0], forward * camForward[1], 0])
 
         time.sleep(3.0 / 240.0)
@@ -351,10 +358,14 @@ def main():
                 if down_release:
                     forward = 0
 
-            cameraYaw = cameraYaw + turn
-
+            print("cameraYaw before", cameraYaw)
+            print("turn", turn)
             o, r, t, _ = env.step((forward, turn, camForward, cameraYaw))
+            print("turn", turn)
+            cameraYaw = cameraYaw + turn
+            print("cameraYaw after", cameraYaw)
             if t:
+                cameraYaw = 35
                 env.reset()
             # print(o["observation"][0:2])  # print(r)
 
