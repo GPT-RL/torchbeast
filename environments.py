@@ -1,7 +1,10 @@
 import json
 import time
+from collections import OrderedDict
+from typing import Generator, cast
 from dataclasses import dataclass
 from pathlib import Path
+import torch
 
 import gym
 import gym.spaces as spaces
@@ -10,6 +13,9 @@ import gym.utils.seeding
 import numpy as np
 import pybullet as p
 from pybullet_utils import bullet_client
+from torch.nn.utils.rnn import pad_sequence
+from tqdm import tqdm
+from transformers import GPT2Tokenizer
 
 GUI = False
 VIEW_MATRIX = p.computeViewMatrixFromYawPitchRoll(
@@ -31,6 +37,7 @@ class PointMassEnv(gym.GoalEnv):
     metadata = {"render.modes": ["human", "rgb_array"], "video.frames_per_second": 60}
     sparse_rew_thresh: float
     mission_nvec: np.ndarray
+    tokenizer: GPT2Tokenizer
     image_width: float = 96
     image_height: float = 72
     env_bounds: float = 2.5
@@ -50,16 +57,31 @@ class PointMassEnv(gym.GoalEnv):
                     meta = json.load(f)
                 yield meta["model_cat"], urdf
 
-        self.urdfs = dict(urdfs())
+        self.urdfs = OrderedDict(urdfs())
+
+        def tokens() -> Generator[torch.Tensor, None, None]:
+            for k in self.urdfs:
+                encoded = self.tokenizer.encode(k, return_tensors="pt")
+                tensor = cast(torch.Tensor, encoded)
+                yield tensor.squeeze(0)
+
+        padded = pad_sequence(
+            list(tokens()),
+            padding_value=self.tokenizer.eos_token_id,
+        ).T
+
+        self.tokens = OrderedDict(zip(self.urdfs, padded))
 
         self.observation_space = spaces.Dict(
             dict(
-                mission=spaces.MultiDiscrete(np.array([self.mission_nvec])),
+                mission=spaces.MultiDiscrete(
+                    np.ones_like(self.mission_nvec[0]) * padded.max().item()
+                ),
                 image=spaces.Box(
                     low=0,
                     high=255,
                     shape=[self.image_width, self.image_height, 3],
-                ),  # TODO
+                ),
             )
         )
 
@@ -105,11 +127,10 @@ class PointMassEnv(gym.GoalEnv):
             renderer=p.ER_BULLET_HARDWARE_OPENGL,
         )
 
-        return_dict = dict(
+        return dict(
             image=rgbPixels.astype(np.float32),
-            # mission=self.mission,
+            mission=self.tokens[self.mission],
         )
-        return return_dict
 
     @staticmethod
     def calc_target_distance(achieved_goal, desired_goal):
@@ -200,15 +221,15 @@ class PointMassEnv(gym.GoalEnv):
                 relativeChildOrientation,
             )
 
-            self.goal_cids = []
+            missions = []
 
             for base_position in [
                 [self.env_bounds, self.env_bounds, 0],
                 [-self.env_bounds, -self.env_bounds, 0],
             ]:
-
                 urdfs = list(self.urdfs.items())
                 name, urdf = urdfs[self.np_random.choice(len(urdfs))]
+                missions.append(name)
 
                 goal = p.loadURDF(
                     str(urdf), basePosition=base_position, useFixedBase=True
@@ -219,19 +240,18 @@ class PointMassEnv(gym.GoalEnv):
                 self._p.setCollisionFilterGroupMask(
                     goal, -1, collisionFilterGroup, collisionFilterMask
                 )
-                self.goal_cids.append(
-                    self._p.createConstraint(
-                        goal,
-                        -1,
-                        -1,
-                        -1,
-                        self._p.JOINT_FIXED,
-                        [1, 1, 1.4],
-                        [0, 0, 0],
-                        relativeChildPosition,
-                        relativeChildOrientation,
-                    )
+                self._p.createConstraint(
+                    goal,
+                    -1,
+                    -1,
+                    -1,
+                    self._p.JOINT_FIXED,
+                    [1, 1, 1.4],
+                    [0, 0, 0],
+                    relativeChildPosition,
+                    relativeChildOrientation,
                 )
+            self.mission = self.np_random.choice(missions)
 
             if GUI:
                 ACTION_LIMIT = 1
@@ -278,11 +298,13 @@ class PointMassEnv(gym.GoalEnv):
 
 
 def main():
+    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
     env = PointMassEnv(
         sparse_rew_thresh=0.3,
         mission_nvec=np.array([400] * 8),
         image_width=84,
         image_height=84,
+        tokenizer=tokenizer,
     )
     env.render(mode="human")
     env.reset()
