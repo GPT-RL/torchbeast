@@ -351,46 +351,49 @@ def main():
     cameraPitch = -45
     steps = 0
     while steps < 3000:
+        try:
+            spherePos, orn = p.getBasePositionAndOrientation(env.mass)
 
-        spherePos, orn = p.getBasePositionAndOrientation(env.mass)
+            cameraTargetPosition = spherePos
+            p.resetDebugVisualizerCamera(
+                cameraDistance, cameraYaw, cameraPitch, cameraTargetPosition
+            )
+            camInfo = p.getDebugVisualizerCamera()
+            camForward = camInfo[5]
 
-        cameraTargetPosition = spherePos
-        p.resetDebugVisualizerCamera(
-            cameraDistance, cameraYaw, cameraPitch, cameraTargetPosition
-        )
-        camInfo = p.getDebugVisualizerCamera()
-        camForward = camInfo[5]
+            keys = p.getKeyboardEvents()
+            for k, v in keys.items():
 
-        keys = p.getKeyboardEvents()
-        for k, v in keys.items():
+                if k == p.B3G_RIGHT_ARROW and (v & p.KEY_WAS_TRIGGERED):
+                    turn = -3
+                if k == p.B3G_RIGHT_ARROW and (v & p.KEY_WAS_RELEASED):
+                    turn = 0
+                if k == p.B3G_LEFT_ARROW and (v & p.KEY_WAS_TRIGGERED):
+                    turn = 3
+                if k == p.B3G_LEFT_ARROW and (v & p.KEY_WAS_RELEASED):
+                    turn = 0
 
-            if k == p.B3G_RIGHT_ARROW and (v & p.KEY_WAS_TRIGGERED):
-                turn = -3
-            if k == p.B3G_RIGHT_ARROW and (v & p.KEY_WAS_RELEASED):
-                turn = 0
-            if k == p.B3G_LEFT_ARROW and (v & p.KEY_WAS_TRIGGERED):
-                turn = 3
-            if k == p.B3G_LEFT_ARROW and (v & p.KEY_WAS_RELEASED):
-                turn = 0
+                if k == p.B3G_UP_ARROW and (v & p.KEY_WAS_TRIGGERED):
+                    forward = 1.8
+                if k == p.B3G_UP_ARROW and (v & p.KEY_WAS_RELEASED):
+                    forward = 0
+                if k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_TRIGGERED):
+                    forward = -1.8
+                if k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_RELEASED):
+                    forward = 0
 
-            if k == p.B3G_UP_ARROW and (v & p.KEY_WAS_TRIGGERED):
-                forward = 1.8
-            if k == p.B3G_UP_ARROW and (v & p.KEY_WAS_RELEASED):
-                forward = 0
-            if k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_TRIGGERED):
-                forward = -1.8
-            if k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_RELEASED):
-                forward = 0
+            force = [forward * camForward[0], forward * camForward[1], 0]
+            cameraYaw = cameraYaw + turn
 
-        force = [forward * camForward[0], forward * camForward[1], 0]
-        cameraYaw = cameraYaw + turn
+            time.sleep(3.0 / 240.0)
 
-        time.sleep(3.0 / 240.0)
+            o, r, _, _ = env.step(np.array(force))
+            print(o["observation"][0:2])  # print(r)
 
-        o, r, _, _ = env.step(np.array(force))
-        print(o["observation"][0:2])  # print(r)
-
-        steps += 1
+            steps += 1
+        except KeyboardInterrupt:
+            print("Received keyboard interrupt. Exiting.")
+            return
 
 
 if __name__ == "__main__":
