@@ -2,6 +2,7 @@ import json
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Generator, List, NamedTuple, cast
 
@@ -30,19 +31,24 @@ PROJECTION_MATRIX = p.computeProjectionMatrixFOV(
     fov=50, aspect=1, nearVal=0.01, farVal=10
 )
 
+CAMERA_DISTANCE = 3
+CAMERA_PITCH = -45
+
 
 class Action(NamedTuple):
     turn: float
     forward: float
 
 
-ACTIONS: List[Action] = [
-    Action(0, 0),
-    Action(-3, 0),
-    Action(3, 0),
-    Action(0, 1.8),
-    Action(0, -1.8),
-]
+class Actions(Enum):
+    NO_OP = Action(0, 0)
+    LEFT = Action(3, 0)
+    RIGHT = Action(-3, 0)
+    FORWARD = Action(0, 1.8)
+    BACKWARD = Action(0, -1.8)
+
+
+ACTIONS = [*Actions]
 
 
 @dataclass
@@ -221,8 +227,7 @@ class PointMassEnv(gym.GoalEnv):
         yield s, r, t, {}
 
     def apply_action(self, action):
-
-        turn, forward = ACTIONS[action]
+        turn, forward = ACTIONS[action].value
         self.cameraYaw += turn
         x, y, _, _ = p.getQuaternionFromEuler(
             [np.pi, 0, np.deg2rad(2 * self.cameraYaw)]
@@ -308,14 +313,10 @@ def main():
     env.render(mode="human")
     env.reset()
 
-    forward = 0
-    turn = 0
-
-    cameraDistance = 3
     cameraYaw = 35
-    cameraPitch = -45
     steps = 0
-    action = ACTIONS.index(Action(0, 0))
+    action = Actions.NO_OP
+
     while True:
         try:
 
@@ -323,47 +324,29 @@ def main():
 
             cameraTargetPosition = spherePos
             p.resetDebugVisualizerCamera(
-                cameraDistance, cameraYaw, cameraPitch, cameraTargetPosition
+                CAMERA_DISTANCE, cameraYaw, CAMERA_PITCH, cameraTargetPosition
             )
 
             keys = p.getKeyboardEvents()
             for k, v in keys.items():
 
-                right = k == p.B3G_RIGHT_ARROW and (v & p.KEY_WAS_TRIGGERED)
-                right_release = k == p.B3G_RIGHT_ARROW and (v & p.KEY_WAS_RELEASED)
-                left = k == p.B3G_LEFT_ARROW and (v & p.KEY_WAS_TRIGGERED)
-                left_release = k == p.B3G_LEFT_ARROW and (v & p.KEY_WAS_RELEASED)
-                up = k == p.B3G_UP_ARROW and (v & p.KEY_WAS_TRIGGERED)
-                up_release = k == p.B3G_UP_ARROW and (v & p.KEY_WAS_RELEASED)
-                down = k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_TRIGGERED)
-                down_release = k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_RELEASED)
+                mapping = {
+                    p.B3G_RIGHT_ARROW: Actions.RIGHT,
+                    p.B3G_LEFT_ARROW: Actions.LEFT,
+                    p.B3G_UP_ARROW: Actions.FORWARD,
+                    p.B3G_DOWN_ARROW: Actions.BACKWARD,
+                }
 
-                prev_turn = turn
-                if right:
-                    turn = -3
-                if right_release:
-                    turn = 0
-                if left:
-                    turn = 3
-                if left_release:
-                    turn = 0
-                if turn != prev_turn:
-                    action = ACTIONS.index(Action(turn, 0))
+                if v & p.KEY_WAS_TRIGGERED:
+                    action = mapping.get(k, Actions.NO_OP)
+                elif v & p.KEY_WAS_RELEASED:
+                    if k in mapping:
+                        action = Actions.NO_OP
 
-                prev_forward = forward
-                if up:
-                    forward = 1.8
-                if up_release:
-                    forward = 0
-                if down:
-                    forward = -1.8
-                if down_release:
-                    forward = 0
-                if forward != prev_forward:
-                    action = ACTIONS.index(Action(0, forward))
-
-            o, r, t, _ = env.step(action)
-            cameraYaw = cameraYaw + turn
+            turn = action.value.turn
+            action_index = ACTIONS.index(action)
+            o, r, t, _ = env.step(action_index)
+            cameraYaw += turn
             if t:
                 cameraYaw = 35
                 env.reset()
