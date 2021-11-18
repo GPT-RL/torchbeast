@@ -41,6 +41,7 @@ class PointMassEnv(gym.GoalEnv):
     image_width: float = 96
     image_height: float = 72
     env_bounds: float = 2.5
+    cameraYaw: float = 35
 
     def __post_init__(
         self,
@@ -90,7 +91,10 @@ class PointMassEnv(gym.GoalEnv):
         self._p = p
         self.physics_client_active = 0
         self._seed()
-        self.global_step = 0
+        self.iterator = None
+
+        self.relativeChildPosition = [0, 0, 0]
+        self.relativeChildOrientation = [0, 0, 0, 1]
 
     def get_observation(self):
         (_, _, rgbPixels, _, _,) = p.getCameraImage(
@@ -132,29 +136,99 @@ class PointMassEnv(gym.GoalEnv):
         else:
             return reward
 
-    def step(self, action: np.ndarray):
+    def generator(self):
+        missions = []
+        goals = []
+
+        for base_position in [
+            [self.env_bounds, self.env_bounds, 0],
+            [-self.env_bounds, -self.env_bounds, 0],
+        ]:
+            urdfs = list(self.urdfs.items())
+            name, urdf = urdfs[self.np_random.choice(len(urdfs))]
+            missions.append(name)
+
+            try:
+                goal = self._p.loadURDF(
+                    str(urdf), basePosition=base_position, useFixedBase=True
+                )
+            except p.error:
+                print(p.error)
+                raise RuntimeError(f"Error while loading {urdf}")
+            goals.append(goal)
+
+            collisionFilterGroup = 0
+            collisionFilterMask = 0
+            self._p.setCollisionFilterGroupMask(
+                goal, -1, collisionFilterGroup, collisionFilterMask
+            )
+            self._p.createConstraint(
+                goal,
+                -1,
+                -1,
+                -1,
+                self._p.JOINT_FIXED,
+                [1, 1, 1.4],
+                [0, 0, 0],
+                self.relativeChildPosition,
+                self.relativeChildOrientation,
+            )
+        self.mission = self.np_random.choice(missions)
+
+        if GUI:
+            ACTION_LIMIT = 1
+            self.x_shift = self._p.addUserDebugParameter(
+                "X", -ACTION_LIMIT, ACTION_LIMIT, 0.0
+            )
+            self.y_shift = self._p.addUserDebugParameter(
+                "Y", -ACTION_LIMIT, ACTION_LIMIT, 0.0
+            )
+
+        self._p.configureDebugVisualizer(p.COV_ENABLE_GUI, GUI)
+
+        self._p.setGravity(0, 0, -10)
+        look_at = [0, 0, 0.1]
+        distance = 7
+        yaw = 0
+        self._p.resetDebugVisualizerCamera(distance, yaw, -89, look_at)
+        cybe = self._p.createCollisionShape(p.GEOM_BOX, halfExtents=[5, 5, 0.1])
+        visplaneId = self._p.createVisualShape(
+            p.GEOM_BOX, halfExtents=[5, 5, 0.1], rgbaColor=[1, 1, 1, 1]
+        )
+        self._p.createMultiBody(0, cybe, visplaneId, [0, 0, -0.2])
+
+        self._p.resetBasePositionAndOrientation(self.mass, [0, 0, 0.6], [0, 0, 0, 1])
+        action = yield self.get_observation()
+
+        for global_step in range(self._max_episode_steps):
+            self.apply_action(action)
+            s = self.get_observation()
+            r = 0
+            t = False
+            action = yield s, r, t, {}
+
+        self.apply_action(action)
+        s = self.get_observation()
+        r = 0
+        t = True
+        for goal in goals:
+            self._p.removeBody(goal)
+        yield s, r, t, {}
+
+    def apply_action(self, action):
         x_shift, y_shift, *_ = action * 0.1  # put it to the correct scale
         x, y, *_ = self._p.getBasePositionAndOrientation(self.mass)[0]
-
         new_x = np.clip(x + x_shift, -2 * self.env_bounds, 2 * self.env_bounds)
         new_y = np.clip(y + y_shift, -2 * self.env_bounds, 2 * self.env_bounds)
         self._p.changeConstraint(self.mass_cid, [new_x, new_y, -0.1], maxForce=10)
-
         for i in range(0, 20):
             self._p.stepSimulation()
 
-        self.global_step += 1
-
-        s = self.get_observation()
-        r = 0
-        t = self.global_step == self._max_episode_steps
-        return s, r, t, {}
+    def step(self, action: np.ndarray):
+        return self.iterator.send(action)
 
     def reset(self):
-        self.global_step = 0
-
-        if self.physics_client_active == 0:
-
+        if not self.physics_client_active:
             if self.is_render:
                 self._p = bullet_client.BulletClient(connection_mode=p.GUI)
                 self._p.configureDebugVisualizer(self._p.COV_ENABLE_SHADOWS, 0)
@@ -173,8 +247,7 @@ class PointMassEnv(gym.GoalEnv):
             self.mass = self._p.createMultiBody(
                 mass, colSphereId, visualShapeId, [0, 0, 0.4]
             )
-            relativeChildPosition = [0, 0, 0]
-            relativeChildOrientation = [0, 0, 0, 1]
+
             self.mass_cid = self._p.createConstraint(
                 self.mass,
                 -1,
@@ -183,67 +256,12 @@ class PointMassEnv(gym.GoalEnv):
                 self._p.JOINT_FIXED,
                 [0, 0, 0],
                 [0, 0, 0],
-                relativeChildPosition,
-                relativeChildOrientation,
+                self.relativeChildPosition,
+                self.relativeChildOrientation,
             )
 
-            missions = []
-
-            for base_position in [
-                [self.env_bounds, self.env_bounds, 0],
-                [-self.env_bounds, -self.env_bounds, 0],
-            ]:
-                urdfs = list(self.urdfs.items())
-                name, urdf = urdfs[self.np_random.choice(len(urdfs))]
-                missions.append(name)
-
-                goal = p.loadURDF(
-                    str(urdf), basePosition=base_position, useFixedBase=True
-                )
-
-                collisionFilterGroup = 0
-                collisionFilterMask = 0
-                self._p.setCollisionFilterGroupMask(
-                    goal, -1, collisionFilterGroup, collisionFilterMask
-                )
-                self._p.createConstraint(
-                    goal,
-                    -1,
-                    -1,
-                    -1,
-                    self._p.JOINT_FIXED,
-                    [1, 1, 1.4],
-                    [0, 0, 0],
-                    relativeChildPosition,
-                    relativeChildOrientation,
-                )
-            self.mission = self.np_random.choice(missions)
-
-            if GUI:
-                ACTION_LIMIT = 1
-                self.x_shift = self._p.addUserDebugParameter(
-                    "X", -ACTION_LIMIT, ACTION_LIMIT, 0.0
-                )
-                self.y_shift = self._p.addUserDebugParameter(
-                    "Y", -ACTION_LIMIT, ACTION_LIMIT, 0.0
-                )
-
-            self._p.configureDebugVisualizer(p.COV_ENABLE_GUI, GUI)
-
-            self._p.setGravity(0, 0, -10)
-            look_at = [0, 0, 0.1]
-            distance = 7
-            yaw = 0
-            self._p.resetDebugVisualizerCamera(distance, yaw, -89, look_at)
-            cybe = self._p.createCollisionShape(p.GEOM_BOX, halfExtents=[5, 5, 0.1])
-            visplaneId = self._p.createVisualShape(
-                p.GEOM_BOX, halfExtents=[5, 5, 0.1], rgbaColor=[1, 1, 1, 1]
-            )
-            self._p.createMultiBody(0, cybe, visplaneId, [0, 0, -0.2])
-
-        self._p.resetBasePositionAndOrientation(self.mass, [0, 0, 0.6], [0, 0, 0, 1])
-
-        return self.get_observation()
+        self.iterator = self.generator()
+        return next(self.iterator)
 
     def render(self, mode="human"):
 
@@ -297,22 +315,43 @@ def main():
             keys = p.getKeyboardEvents()
             for k, v in keys.items():
 
-                if k == p.B3G_RIGHT_ARROW and (v & p.KEY_WAS_TRIGGERED):
+                right = k == p.B3G_RIGHT_ARROW and (v & p.KEY_WAS_TRIGGERED)
+                right_release = k == p.B3G_RIGHT_ARROW and (v & p.KEY_WAS_RELEASED)
+                left = k == p.B3G_LEFT_ARROW and (v & p.KEY_WAS_TRIGGERED)
+                left_release = k == p.B3G_LEFT_ARROW and (v & p.KEY_WAS_RELEASED)
+                up = k == p.B3G_UP_ARROW and (v & p.KEY_WAS_TRIGGERED)
+                up_release = k == p.B3G_UP_ARROW and (v & p.KEY_WAS_RELEASED)
+                down = k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_TRIGGERED)
+                down_release = k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_RELEASED)
+                no_op = right_release or left_release or up_release or down_release
+
+                action = [
+                    right,
+                    right_release,
+                    left,
+                    left_release,
+                    up,
+                    up_release,
+                    down,
+                    down_release,
+                ]
+
+                if right:
                     turn = -3
-                if k == p.B3G_RIGHT_ARROW and (v & p.KEY_WAS_RELEASED):
+                if right_release:
                     turn = 0
-                if k == p.B3G_LEFT_ARROW and (v & p.KEY_WAS_TRIGGERED):
+                if left:
                     turn = 3
-                if k == p.B3G_LEFT_ARROW and (v & p.KEY_WAS_RELEASED):
+                if left_release:
                     turn = 0
 
-                if k == p.B3G_UP_ARROW and (v & p.KEY_WAS_TRIGGERED):
+                if up:
                     forward = 1.8
-                if k == p.B3G_UP_ARROW and (v & p.KEY_WAS_RELEASED):
+                if up_release:
                     forward = 0
-                if k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_TRIGGERED):
+                if down:
                     forward = -1.8
-                if k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_RELEASED):
+                if down_release:
                     forward = 0
 
             force = [forward * camForward[0], forward * camForward[1], 0]
@@ -320,7 +359,9 @@ def main():
 
             time.sleep(3.0 / 240.0)
 
-            o, r, _, _ = env.step(np.array(force))
+            o, r, t, _ = env.step(np.array(force))
+            if t:
+                env.reset()
             # print(o["observation"][0:2])  # print(r)
 
             steps += 1
