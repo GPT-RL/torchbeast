@@ -350,8 +350,9 @@ def main():
     cameraYaw = 35
     cameraPitch = -45
     steps = 0
-    while steps < 3000:
+    while True:
         try:
+
             spherePos, orn = p.getBasePositionAndOrientation(env.mass)
 
             cameraTargetPosition = spherePos
