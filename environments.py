@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,7 +47,16 @@ class PointMassEnv(gym.GoalEnv):
         self.action_space = spaces.Box(-high, high)
         high_obs = self.env_bounds * np.ones([obs_dim])
         high_goal = self.env_bounds * np.ones([goal_dim])
-        self.urdfs = [str(u) for u in Path("dataset").glob("*/mobility.urdf")]
+
+        def urdfs():
+            for subdir in Path("dataset").iterdir():
+                urdf = Path(subdir, "mobility.urdf")
+                assert urdf.exists()
+                with Path(subdir, "meta.json").open() as f:
+                    meta = json.load(f)
+                yield meta["model_cat"], urdf
+
+        self.urdfs = dict(urdfs())
 
         self.observation_space = spaces.Dict(
             dict(
@@ -248,10 +258,11 @@ class PointMassEnv(gym.GoalEnv):
                     [-self.env_bounds, -self.env_bounds, 0],
                 ]:
 
-                    urdf = self.np_random.choice(self.urdfs)
+                    urdfs = list(self.urdfs.items())
+                    name, urdf = urdfs[self.np_random.choice(len(urdfs))]
 
                     goal = p.loadURDF(
-                        urdf, basePosition=base_position, useFixedBase=True
+                        str(urdf), basePosition=base_position, useFixedBase=True
                     )
 
                     collisionFilterGroup = 0
@@ -375,7 +386,7 @@ def main():
             time.sleep(3.0 / 240.0)
 
             o, r, _, _ = env.step(np.array(force))
-            print(o["observation"][0:2])  # print(r)
+            # print(o["observation"][0:2])  # print(r)
 
             steps += 1
         except KeyboardInterrupt:
