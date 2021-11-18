@@ -1,10 +1,9 @@
 import json
 import time
 from collections import OrderedDict
-from typing import Generator, cast
 from dataclasses import dataclass
 from pathlib import Path
-import torch
+from typing import Generator, List, NamedTuple, cast
 
 import gym
 import gym.spaces as spaces
@@ -12,9 +11,9 @@ import gym.utils
 import gym.utils.seeding
 import numpy as np
 import pybullet as p
+import torch
 from pybullet_utils import bullet_client
 from torch.nn.utils.rnn import pad_sequence
-from tqdm import tqdm
 from transformers import GPT2Tokenizer
 
 GUI = False
@@ -30,6 +29,20 @@ VIEW_MATRIX = p.computeViewMatrixFromYawPitchRoll(
 PROJECTION_MATRIX = p.computeProjectionMatrixFOV(
     fov=50, aspect=1, nearVal=0.01, farVal=10
 )
+
+
+class Action(NamedTuple):
+    turn: float
+    forward: float
+
+
+ACTIONS: List[Action] = [
+    Action(0, 0),
+    Action(-3, 0),
+    Action(3, 0),
+    Action(0, 1.8),
+    Action(0, -1.8),
+]
 
 
 @dataclass
@@ -139,7 +152,7 @@ class PointMassEnv(gym.GoalEnv):
     def generator(self):
         missions = []
         goals = []
-        self.cameraYaw = 35
+        self.cameraYaw = 125
 
         for base_position in [
             [self.env_bounds, self.env_bounds, 0],
@@ -209,14 +222,12 @@ class PointMassEnv(gym.GoalEnv):
 
     def apply_action(self, action):
 
-        forward, turn, camForward, _cameraYaw = action
-        print("self.cameraYaw before", self.cameraYaw)
-        print("turn", turn)
-        if not self.cameraYaw == _cameraYaw:
-            breakpoint()
+        turn, forward = ACTIONS[action]
         self.cameraYaw += turn
-        print("self.cameraYaw after", self.cameraYaw)
-        force = np.array([forward * camForward[0], forward * camForward[1], 0])
+        x, y, _, _ = p.getQuaternionFromEuler(
+            [np.pi, 0, np.deg2rad(2 * self.cameraYaw)]
+        )
+        force = np.array([forward * x, forward * y, 0])
 
         time.sleep(3.0 / 240.0)
 
@@ -228,7 +239,7 @@ class PointMassEnv(gym.GoalEnv):
         for i in range(0, 20):
             self._p.stepSimulation()
 
-    def step(self, action: np.ndarray):
+    def step(self, action: int):
         return self.iterator.send(action)
 
     def reset(self):
@@ -304,6 +315,7 @@ def main():
     cameraYaw = 35
     cameraPitch = -45
     steps = 0
+    action = ACTIONS.index(Action(0, 0))
     while True:
         try:
 
@@ -313,8 +325,6 @@ def main():
             p.resetDebugVisualizerCamera(
                 cameraDistance, cameraYaw, cameraPitch, cameraTargetPosition
             )
-            camInfo = p.getDebugVisualizerCamera()
-            camForward = camInfo[5]
 
             keys = p.getKeyboardEvents()
             for k, v in keys.items():
@@ -327,19 +337,8 @@ def main():
                 up_release = k == p.B3G_UP_ARROW and (v & p.KEY_WAS_RELEASED)
                 down = k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_TRIGGERED)
                 down_release = k == p.B3G_DOWN_ARROW and (v & p.KEY_WAS_RELEASED)
-                no_op = right_release or left_release or up_release or down_release
 
-                action = [
-                    right,
-                    right_release,
-                    left,
-                    left_release,
-                    up,
-                    up_release,
-                    down,
-                    down_release,
-                ]
-
+                prev_turn = turn
                 if right:
                     turn = -3
                 if right_release:
@@ -348,7 +347,10 @@ def main():
                     turn = 3
                 if left_release:
                     turn = 0
+                if turn != prev_turn:
+                    action = ACTIONS.index(Action(turn, 0))
 
+                prev_forward = forward
                 if up:
                     forward = 1.8
                 if up_release:
@@ -357,17 +359,14 @@ def main():
                     forward = -1.8
                 if down_release:
                     forward = 0
+                if forward != prev_forward:
+                    action = ACTIONS.index(Action(0, forward))
 
-            print("cameraYaw before", cameraYaw)
-            print("turn", turn)
-            o, r, t, _ = env.step((forward, turn, camForward, cameraYaw))
-            print("turn", turn)
+            o, r, t, _ = env.step(action)
             cameraYaw = cameraYaw + turn
-            print("cameraYaw after", cameraYaw)
             if t:
                 cameraYaw = 35
                 env.reset()
-            # print(o["observation"][0:2])  # print(r)
 
             steps += 1
         except KeyboardInterrupt:
