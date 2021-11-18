@@ -1,15 +1,15 @@
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import gym, gym.utils, gym.utils.seeding
-import pybullet as p
-import numpy as np
-import time
-from pybullet_utils import bullet_client
-
+import gym
 import gym.spaces as spaces
-import math
+import gym.utils
+import gym.utils.seeding
+import numpy as np
+import pybullet as p
+from pybullet_utils import bullet_client
 
 GUI = False
 VIEW_MATRIX = p.computeViewMatrixFromYawPitchRoll(
@@ -30,23 +30,17 @@ PROJECTION_MATRIX = p.computeProjectionMatrixFOV(
 class PointMassEnv(gym.GoalEnv):
     metadata = {"render.modes": ["human", "rgb_array"], "video.frames_per_second": 60}
     sparse_rew_thresh: float
+    mission_nvec: np.ndarray
+    image_width: float = 96
+    image_height: float = 72
     env_bounds: float = 2.5
 
     def __post_init__(
         self,
     ):
 
-        action_dim = 2
-        obs_dim = 4
-
         self._max_episode_steps = 100
-
-        goal_dim = 2 * 2
-
-        high = np.ones([action_dim])
-        self.action_space = spaces.Box(-high, high)
-        high_obs = self.env_bounds * np.ones([obs_dim])
-        high_goal = self.env_bounds * np.ones([goal_dim])
+        self.action_space = spaces.Discrete(5)
 
         def urdfs():
             for subdir in Path("dataset").iterdir():
@@ -60,17 +54,12 @@ class PointMassEnv(gym.GoalEnv):
 
         self.observation_space = spaces.Dict(
             dict(
-                desired_goal=spaces.Box(-high_goal, high_goal),
-                achieved_goal=spaces.Box(-high_goal, high_goal),
-                observation=spaces.Box(-high_obs, high_obs),
-                controllable_achieved_goal=spaces.Box(
-                    -self.env_bounds * np.ones([action_dim]),
-                    self.env_bounds * np.ones([action_dim]),
-                ),
-                full_positional_state=spaces.Box(
-                    -self.env_bounds * np.ones([action_dim]),
-                    self.env_bounds * np.ones([action_dim]),
-                ),
+                mission=spaces.MultiDiscrete(np.array([self.mission_nvec])),
+                image=spaces.Box(
+                    low=0,
+                    high=255,
+                    shape=[self.image_width, self.image_height, 3],
+                ),  # TODO
             )
         )
 
@@ -105,40 +94,21 @@ class PointMassEnv(gym.GoalEnv):
             o = o["observation"]
         self.initialize_actor_pos(o)
 
-    def calc_state(self):
-
-        # state will be x,y pos, total velocity, x,y goal.
-        current_pos = self._p.getBasePositionAndOrientation(self.mass)[0]
-        x, y = current_pos[0], current_pos[1]
-        velocity = self._p.getBaseVelocity(self.mass)[0]
-        x_vel, y_vel = velocity[0], velocity[1]
-        obs = [x, y, x_vel, y_vel]
-
-        achieved_goal = np.array([x, y])
-        extra_info = None
-
-        full_positional_state = np.array([x, y])
-        return_dict = dict(
-            observation=np.array(obs).copy().astype("float32"),
-            achieved_goal=np.array(achieved_goal).copy().astype("float32"),
-            desired_goal=np.zeros(2).astype("float32"),
-            extra_info=extra_info,
-            controllable_achieved_goal=np.array([x, y]).copy().astype("float32"),
-            full_positional_state=full_positional_state.astype("float32"),
+    def get_observation(self):
+        (_, _, rgbPixels, _, _,) = p.getCameraImage(
+            self.image_width,
+            self.image_height,
+            viewMatrix=VIEW_MATRIX,
+            projectionMatrix=PROJECTION_MATRIX,
+            shadow=0,
+            flags=p.ER_NO_SEGMENTATION_MASK,
+            renderer=p.ER_BULLET_HARDWARE_OPENGL,
         )
 
-        if self.is_render:
-            img = p.getCameraImage(
-                width=48,
-                height=48,
-                viewMatrix=VIEW_MATRIX,
-                projectionMatrix=PROJECTION_MATRIX,
-                shadow=0,
-                flags=p.ER_NO_SEGMENTATION_MASK,
-                renderer=p.ER_BULLET_HARDWARE_OPENGL,
-            )
-            return_dict["image"] = img[2][:, :, :3]
-
+        return_dict = dict(
+            image=rgbPixels.astype(np.float32),
+            # mission=self.mission,
+        )
         return return_dict
 
     @staticmethod
@@ -149,11 +119,7 @@ class PointMassEnv(gym.GoalEnv):
     def compute_reward(
         self, achieved_goal: np.ndarray, desired_goal: np.ndarray, info=None
     ):
-        # reward given if new pos is closer than old
-        current_distance = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
-        position_reward = -1000 * (current_distance - self.last_target_distance)
-        self.last_target_distance = current_distance
-        return position_reward
+        return 0
 
     def compute_reward_sparse(self, achieved_goal, desired_goal):
 
@@ -180,7 +146,6 @@ class PointMassEnv(gym.GoalEnv):
             return reward
 
     def step(self, action: np.ndarray):
-
         x_shift, y_shift, *_ = action * 0.1  # put it to the correct scale
         x, y, *_ = self._p.getBasePositionAndOrientation(self.mass)[0]
 
@@ -191,131 +156,108 @@ class PointMassEnv(gym.GoalEnv):
         for i in range(0, 20):
             self._p.stepSimulation()
 
-        obs = self.calc_state()
-
-        r = self.compute_reward(obs["achieved_goal"], obs["desired_goal"])
-
         self.global_step += 1
 
-        success = (
-            0
-            if self.compute_reward_sparse(obs["achieved_goal"], obs["desired_goal"]) < 0
-            else 1
-        )  # assuming negative rewards
+        s = self.get_observation()
+        r = 0
+        t = self.global_step == self._max_episode_steps
+        return s, r, t, {}
 
-        # this part is only for interoperability with baselines
-        if self.global_step == self._max_episode_steps:
-            done = True
-        else:
-            done = False
-        return obs, r, done, {"is_success": success}
+    def reset(self):
+        self.global_step = 0
 
-    def reset(self, o=None):
-        if o is not None:
-            breakpoint()
-            self.initialize_start_pos(o)
-        else:
-            self.global_step = 0
+        if self.physics_client_active == 0:
 
-            if self.physics_client_active == 0:
+            if self.is_render:
+                self._p = bullet_client.BulletClient(connection_mode=p.GUI)
+                self._p.configureDebugVisualizer(self._p.COV_ENABLE_SHADOWS, 0)
+                self.gui_active = True
+            else:
+                self._p = bullet_client.BulletClient(connection_mode=p.DIRECT)
 
-                if self.is_render:
-                    self._p = bullet_client.BulletClient(connection_mode=p.GUI)
-                    self._p.configureDebugVisualizer(self._p.COV_ENABLE_SHADOWS, 0)
-                    self.gui_active = True
-                else:
-                    self._p = bullet_client.BulletClient(connection_mode=p.DIRECT)
+            self.physics_client_active = 1
 
-                self.physics_client_active = 1
-
-                sphereRadius = 0.2
-                mass = 1
-                visualShapeId = 2
-                colSphereId = self._p.createCollisionShape(
-                    p.GEOM_SPHERE, radius=sphereRadius
-                )
-                self.mass = self._p.createMultiBody(
-                    mass, colSphereId, visualShapeId, [0, 0, 0.4]
-                )
-                relativeChildPosition = [0, 0, 0]
-                relativeChildOrientation = [0, 0, 0, 1]
-                self.mass_cid = self._p.createConstraint(
-                    self.mass,
-                    -1,
-                    -1,
-                    -1,
-                    self._p.JOINT_FIXED,
-                    [0, 0, 0],
-                    [0, 0, 0],
-                    relativeChildPosition,
-                    relativeChildOrientation,
-                )
-
-                self.goal_cids = []
-
-                for base_position in [
-                    [self.env_bounds, self.env_bounds, 0],
-                    [-self.env_bounds, -self.env_bounds, 0],
-                ]:
-
-                    urdfs = list(self.urdfs.items())
-                    name, urdf = urdfs[self.np_random.choice(len(urdfs))]
-
-                    goal = p.loadURDF(
-                        str(urdf), basePosition=base_position, useFixedBase=True
-                    )
-
-                    collisionFilterGroup = 0
-                    collisionFilterMask = 0
-                    self._p.setCollisionFilterGroupMask(
-                        goal, -1, collisionFilterGroup, collisionFilterMask
-                    )
-                    self.goal_cids.append(
-                        self._p.createConstraint(
-                            goal,
-                            -1,
-                            -1,
-                            -1,
-                            self._p.JOINT_FIXED,
-                            [1, 1, 1.4],
-                            [0, 0, 0],
-                            relativeChildPosition,
-                            relativeChildOrientation,
-                        )
-                    )
-
-                if GUI:
-                    ACTION_LIMIT = 1
-                    self.x_shift = self._p.addUserDebugParameter(
-                        "X", -ACTION_LIMIT, ACTION_LIMIT, 0.0
-                    )
-                    self.y_shift = self._p.addUserDebugParameter(
-                        "Y", -ACTION_LIMIT, ACTION_LIMIT, 0.0
-                    )
-
-                self._p.configureDebugVisualizer(p.COV_ENABLE_GUI, GUI)
-
-                self._p.setGravity(0, 0, -10)
-                look_at = [0, 0, 0.1]
-                distance = 7
-                yaw = 0
-                self._p.resetDebugVisualizerCamera(distance, yaw, -89, look_at)
-                cybe = self._p.createCollisionShape(p.GEOM_BOX, halfExtents=[5, 5, 0.1])
-                visplaneId = self._p.createVisualShape(
-                    p.GEOM_BOX, halfExtents=[5, 5, 0.1], rgbaColor=[1, 1, 1, 1]
-                )
-                self._p.createMultiBody(0, cybe, visplaneId, [0, 0, -0.2])
-
-            self._p.resetBasePositionAndOrientation(
-                self.mass, [0, 0, 0.6], [0, 0, 0, 1]
+            sphereRadius = 0.2
+            mass = 1
+            visualShapeId = 2
+            colSphereId = self._p.createCollisionShape(
+                p.GEOM_SPHERE, radius=sphereRadius
+            )
+            self.mass = self._p.createMultiBody(
+                mass, colSphereId, visualShapeId, [0, 0, 0.4]
+            )
+            relativeChildPosition = [0, 0, 0]
+            relativeChildOrientation = [0, 0, 0, 1]
+            self.mass_cid = self._p.createConstraint(
+                self.mass,
+                -1,
+                -1,
+                -1,
+                self._p.JOINT_FIXED,
+                [0, 0, 0],
+                [0, 0, 0],
+                relativeChildPosition,
+                relativeChildOrientation,
             )
 
-        obs = self.calc_state()
-        self.last_target_distance = self.calc_target_distance(
-            obs["achieved_goal"], obs["desired_goal"]
-        )
+            self.goal_cids = []
 
-        return obs
+            for base_position in [
+                [self.env_bounds, self.env_bounds, 0],
+                [-self.env_bounds, -self.env_bounds, 0],
+            ]:
+
+                urdfs = list(self.urdfs.items())
+                name, urdf = urdfs[self.np_random.choice(len(urdfs))]
+
+                goal = p.loadURDF(
+                    str(urdf), basePosition=base_position, useFixedBase=True
+                )
+
+                collisionFilterGroup = 0
+                collisionFilterMask = 0
+                self._p.setCollisionFilterGroupMask(
+                    goal, -1, collisionFilterGroup, collisionFilterMask
+                )
+                self.goal_cids.append(
+                    self._p.createConstraint(
+                        goal,
+                        -1,
+                        -1,
+                        -1,
+                        self._p.JOINT_FIXED,
+                        [1, 1, 1.4],
+                        [0, 0, 0],
+                        relativeChildPosition,
+                        relativeChildOrientation,
+                    )
+                )
+
+            if GUI:
+                ACTION_LIMIT = 1
+                self.x_shift = self._p.addUserDebugParameter(
+                    "X", -ACTION_LIMIT, ACTION_LIMIT, 0.0
+                )
+                self.y_shift = self._p.addUserDebugParameter(
+                    "Y", -ACTION_LIMIT, ACTION_LIMIT, 0.0
+                )
+
+            self._p.configureDebugVisualizer(p.COV_ENABLE_GUI, GUI)
+
+            self._p.setGravity(0, 0, -10)
+            look_at = [0, 0, 0.1]
+            distance = 7
+            yaw = 0
+            self._p.resetDebugVisualizerCamera(distance, yaw, -89, look_at)
+            cybe = self._p.createCollisionShape(p.GEOM_BOX, halfExtents=[5, 5, 0.1])
+            visplaneId = self._p.createVisualShape(
+                p.GEOM_BOX, halfExtents=[5, 5, 0.1], rgbaColor=[1, 1, 1, 1]
+            )
+            self._p.createMultiBody(0, cybe, visplaneId, [0, 0, -0.2])
+
+        self._p.resetBasePositionAndOrientation(self.mass, [0, 0, 0.6], [0, 0, 0, 1])
+
+        return self.get_observation()
 
     def render(self, mode="human"):
 
@@ -336,9 +278,14 @@ class PointMassEnv(gym.GoalEnv):
 
 
 def main():
-    env = PointMassEnv(sparse_rew_thresh=0.3)
+    env = PointMassEnv(
+        sparse_rew_thresh=0.3,
+        mission_nvec=np.array([400] * 8),
+        image_width=84,
+        image_height=84,
+    )
     env.render(mode="human")
-    env.reset()["observation"]
+    env.reset()
 
     forward = 0
     turn = 0
