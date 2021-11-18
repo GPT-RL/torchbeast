@@ -250,7 +250,7 @@ class PointMassEnv(gym.GoalEnv):
                     urdf = self.np_random.choice(self.urdfs)
 
                     goal = p.loadURDF(
-                        urdf, basePosition=base_position, useFixedBase=True
+                        urdf, basePosition=[0.5, 0.0, 0.5], useFixedBase=True
                     )
 
                     self.goals.append(goal)
