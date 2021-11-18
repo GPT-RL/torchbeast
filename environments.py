@@ -93,7 +93,7 @@ class PointMassEnv(gym.GoalEnv):
     # TODO change the env initialise start pos to a more general form of the function
 
     def initialize_start_pos(self, o):
-        if type(o) is dict:
+        if isinstance(o, dict):
             o = o["observation"]
         self.initialize_actor_pos(o)
 
@@ -242,7 +242,6 @@ class PointMassEnv(gym.GoalEnv):
                     relativeChildOrientation,
                 )
 
-                self.goals = []
                 self.goal_cids = []
 
                 for g in range(0, self.num_goals):
@@ -253,15 +252,14 @@ class PointMassEnv(gym.GoalEnv):
                         urdf, basePosition=[0.5, 0.0, 0.5], useFixedBase=True
                     )
 
-                    self.goals.append(goal)
                     collisionFilterGroup = 0
                     collisionFilterMask = 0
                     self._p.setCollisionFilterGroupMask(
-                        self.goals[g], -1, collisionFilterGroup, collisionFilterMask
+                        goal, -1, collisionFilterGroup, collisionFilterMask
                     )
                     self.goal_cids.append(
                         self._p.createConstraint(
-                            self.goals[g],
+                            goal,
                             -1,
                             -1,
                             -1,
@@ -310,10 +308,10 @@ class PointMassEnv(gym.GoalEnv):
                 self._p.configureDebugVisualizer(p.COV_ENABLE_GUI, GUI)
 
                 self._p.setGravity(0, 0, -10)
-                lookat = [0, 0, 0.1]
+                look_at = [0, 0, 0.1]
                 distance = 7
                 yaw = 0
-                self._p.resetDebugVisualizerCamera(distance, yaw, -89, lookat)
+                self._p.resetDebugVisualizerCamera(distance, yaw, -89, look_at)
                 cybe = self._p.createCollisionShape(p.GEOM_BOX, halfExtents=[5, 5, 0.1])
                 visplaneId = self._p.createVisualShape(
                     p.GEOM_BOX, halfExtents=[5, 5, 0.1], rgbaColor=[1, 1, 1, 1]
@@ -343,6 +341,7 @@ class PointMassEnv(gym.GoalEnv):
         self.last_target_distance = self.calc_target_distance(
             obs["achieved_goal"], obs["desired_goal"]
         )
+
         return obs
 
     def render(self, mode="human"):
