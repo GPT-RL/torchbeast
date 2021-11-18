@@ -271,31 +271,6 @@ class PointMassEnv(gym.GoalEnv):
                         )
                     )
 
-                wall_id = self._p.createCollisionShape(
-                    p.GEOM_BOX, halfExtents=[0.05, self.env_bounds, 0.5]
-                )
-                for pos, euler in zip(
-                    [
-                        [self.env_bounds, 0, 0.0],
-                        [-self.env_bounds, 0, 0.0],
-                        [0, self.env_bounds, 0],
-                        [0, -self.env_bounds, 0],
-                    ],
-                    [
-                        [0, 0, 0],
-                        [0, 0, 0],
-                        [0, 0, math.pi / 2],
-                        [0, 0, math.pi / 2],
-                    ],
-                ):
-                    self._p.createMultiBody(
-                        0,
-                        wall_id,
-                        10,
-                        pos,
-                        self._p.getQuaternionFromEuler(euler),
-                    )
-
                 if GUI:
                     ACTION_LIMIT = 1
                     self.x_shift = self._p.addUserDebugParameter(
