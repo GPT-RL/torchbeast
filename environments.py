@@ -4,8 +4,9 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Generator, List, NamedTuple, cast
+from typing import Generator, NamedTuple, TypeVar, cast
 
+import PIL.Image
 import gym
 import gym.spaces as spaces
 import gym.utils
@@ -35,17 +36,29 @@ CAMERA_DISTANCE = 3
 CAMERA_PITCH = -45
 
 
+class ObservationSpace(NamedTuple):
+    mission: spaces.MultiDiscrete
+    image: spaces.Box
+
+
+class Observation(NamedTuple):
+    mission: np.ndarray
+    image: np.ndarray
+
+
 class Action(NamedTuple):
     turn: float
     forward: float
+    take_picture: bool
 
 
 class Actions(Enum):
-    NO_OP = Action(0, 0)
-    LEFT = Action(3, 0)
-    RIGHT = Action(-3, 0)
-    FORWARD = Action(0, 1.8)
-    BACKWARD = Action(0, -1.8)
+    NO_OP = Action(0, 0, False)
+    LEFT = Action(3, 0, False)
+    RIGHT = Action(-3, 0, False)
+    FORWARD = Action(0, 1.8, False)
+    BACKWARD = Action(0, -1.8, False)
+    PICTURE = Action(0, 0, True)
 
 
 ACTIONS = [*Actions]
@@ -66,7 +79,7 @@ class PointMassEnv(gym.GoalEnv):
         self,
     ):
 
-        self._max_episode_steps = 100
+        self._max_episode_steps = 200
         self.action_space = spaces.Discrete(5)
 
         def urdfs():
@@ -92,8 +105,8 @@ class PointMassEnv(gym.GoalEnv):
 
         self.tokens = OrderedDict(zip(self.urdfs, padded))
 
-        self.observation_space = spaces.Dict(
-            dict(
+        self.observation_space = spaces.Tuple(
+            ObservationSpace(
                 mission=spaces.MultiDiscrete(
                     np.ones_like(self.mission_nvec[0]) * padded.max().item()
                 ),
@@ -115,18 +128,26 @@ class PointMassEnv(gym.GoalEnv):
         self.relativeChildPosition = [0, 0, 0]
         self.relativeChildOrientation = [0, 0, 0, 1]
 
-    def get_observation(self):
+    def get_observation(self) -> Observation:
+        pos, _ = p.getBasePositionAndOrientation(self.mass)
         (_, _, rgbPixels, _, _,) = p.getCameraImage(
             self.image_width,
             self.image_height,
-            viewMatrix=VIEW_MATRIX,
+            viewMatrix=self._p.computeViewMatrixFromYawPitchRoll(
+                cameraTargetPosition=pos,
+                distance=CAMERA_DISTANCE,
+                yaw=self.cameraYaw,
+                pitch=CAMERA_PITCH,
+                roll=0,
+                upAxisIndex=2,
+            ),
             projectionMatrix=PROJECTION_MATRIX,
             shadow=0,
             flags=p.ER_NO_SEGMENTATION_MASK,
             renderer=p.ER_BULLET_HARDWARE_OPENGL,
         )
 
-        return dict(
+        return Observation(
             image=rgbPixels.astype(np.float32),
             mission=self.tokens[self.mission],
         )
@@ -158,7 +179,7 @@ class PointMassEnv(gym.GoalEnv):
     def generator(self):
         missions = []
         goals = []
-        self.cameraYaw = 125
+        self.cameraYaw = 0
 
         for base_position in [
             [self.env_bounds, self.env_bounds, 0],
@@ -214,6 +235,10 @@ class PointMassEnv(gym.GoalEnv):
         for global_step in range(self._max_episode_steps):
             self.apply_action(action)
             s = self.get_observation()
+            if ACTIONS[action].value.take_picture:
+                PIL.Image.fromarray(np.uint8(s.image)).show()
+                breakpoint()
+
             r = 0
             t = False
             action = yield s, r, t, {}
@@ -227,10 +252,10 @@ class PointMassEnv(gym.GoalEnv):
         yield s, r, t, {}
 
     def apply_action(self, action):
-        turn, forward = ACTIONS[action].value
+        turn, forward, _ = ACTIONS[action].value
         self.cameraYaw += turn
         x, y, _, _ = p.getQuaternionFromEuler(
-            [np.pi, 0, np.deg2rad(2 * self.cameraYaw)]
+            [np.pi, 0, np.deg2rad(2 * self.cameraYaw) + np.pi]
         )
         force = np.array([forward * x, forward * y, 0])
 
@@ -306,14 +331,14 @@ def main():
     env = PointMassEnv(
         sparse_rew_thresh=0.3,
         mission_nvec=np.array([400] * 8),
-        image_width=84,
-        image_height=84,
+        image_width=200,
+        image_height=200,
         tokenizer=tokenizer,
     )
     env.render(mode="human")
     env.reset()
 
-    cameraYaw = 35
+    cameraYaw = 0
     steps = 0
     action = Actions.NO_OP
 
@@ -335,6 +360,7 @@ def main():
                     p.B3G_LEFT_ARROW: Actions.LEFT,
                     p.B3G_UP_ARROW: Actions.FORWARD,
                     p.B3G_DOWN_ARROW: Actions.BACKWARD,
+                    p.B3G_SPACE: Actions.PICTURE,
                 }
 
                 if v & p.KEY_WAS_TRIGGERED:
@@ -346,6 +372,8 @@ def main():
             turn = action.value.turn
             action_index = ACTIONS.index(action)
             o, r, t, _ = env.step(action_index)
+            if action == Actions.PICTURE:
+                action = Actions.NO_OP
             cameraYaw += turn
             if t:
                 cameraYaw = 35
