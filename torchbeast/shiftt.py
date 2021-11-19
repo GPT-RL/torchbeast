@@ -14,21 +14,64 @@ from torchbeast.environment import Observation, ObservationSpace, PointMassEnv
 from torchbeast.monobeast import BufferSpec, parser
 
 
-class Environment(environment.Environment):
-    @staticmethod
-    def _format_frame(frame):
-        frame = torch.from_numpy(frame)
-        return frame.view((1, 1) + frame.shape)  # (...) -> (T,B,...).
+class ImageToPyTorch(atari_wrappers.ImageToPyTorch):
+    def __init__(self, env):
+        gym.ObservationWrapper.__init__(self, env)
+        obs_spaces = ObservationSpace(*self.observation_space.spaces)
+        old_shape = obs_spaces.image.shape
+        self.observation_space = gym.spaces.Tuple(
+            ObservationSpace(
+                mission=obs_spaces.mission,
+                image=gym.spaces.Box(
+                    low=0,
+                    high=255,
+                    shape=(old_shape[-1], old_shape[0], old_shape[1]),
+                    dtype=np.uint8,
+                ),
+            )
+        )
 
+    def observation(self, observation):
+        obs = Observation(*observation)
+        image = super().observation(obs.image)
+        obs = Observation(image=image, mission=obs.mission)
+        # assert self.observation_space.contains(obs)
+        return obs
+
+
+class Environment(environment.Environment):
     def _initial(self, obs):
         obs = Observation(*obs)
         initial = super()._initial(obs.image)
-        return dict(**initial, mission=_format_frame(obs.mission))
+        return dict(**initial, mission=torch.tensor(obs.mission))
 
     def _step(self, frame, action, reward, done):
         obs = Observation(*frame)
-        step = super()._step(obs.image, action, reward, done)
-        return dict(**step, mission=_format_frame(obs.mission))
+        frame = obs.image
+        mission = obs.mission
+        self.episode_step += 1
+        self.episode_return += reward
+        episode_step = self.episode_step
+        episode_return = self.episode_return
+        if done:
+            frame = self.gym_env.reset()
+            obs = Observation(*frame)
+            frame = obs.image
+            mission = obs.mission
+            self.episode_return = torch.zeros(1, 1)
+            self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
+        frame = _format_frame(frame)
+        reward = torch.tensor(reward).view(1, 1)
+        done = torch.tensor(done).view(1, 1)
+        return_dict = dict(
+            frame=frame,
+            reward=reward,
+            done=done,
+            episode_return=episode_return,
+            episode_step=episode_step,
+            last_action=action,
+        )
+        return dict(mission=torch.tensor(mission), **return_dict)
 
 
 class Network(net.AtariNet):
@@ -45,8 +88,13 @@ class Network(net.AtariNet):
 
     def get_core_input(self, inputs):
         T, B, core_input = super().get_core_input(inputs)
-        mission = self.mission_encoder(inputs["mission"])
+        mission = inputs["mission"]
+        mission = self.mission_encoder.forward(mission.reshape(-1, mission.size(-1)))
         return T, B, torch.cat([core_input, mission], dim=-1)
+
+    @staticmethod
+    def get_fc():
+        return nn.Linear(2560, 512)
 
 
 class ScaledFloatFrame(atari_wrappers.ScaledFloatFrame):
@@ -64,7 +112,9 @@ class ScaledFloatFrame(atari_wrappers.ScaledFloatFrame):
 
     def observation(self, obs):
         obs = Observation(*obs)
-        return Observation(image=super().observation(obs.image), mission=obs.mission)
+        obs = Observation(image=super().observation(obs.image), mission=obs.mission)
+        # assert self.observation_space.contains(obs)
+        return obs
 
 
 class FrameStack(atari_wrappers.FrameStack):
@@ -83,7 +133,9 @@ class FrameStack(atari_wrappers.FrameStack):
         assert len(self.frames) == self.k
         image = LazyFrames([Observation(*f).image for f in self.frames])
         mission = Observation(*self.frames[0]).mission
-        return Observation(image=image, mission=mission)
+        obs = Observation(image=image, mission=mission)
+        # assert self.observation_space.contains(obs)
+        return obs
 
 
 class Trainer(monobeast.Trainer):
@@ -93,9 +145,10 @@ class Trainer(monobeast.Trainer):
 
     @staticmethod
     def create_env(flags):
-        env = PointMassEnv()
+        env = PointMassEnv(reindex_tokens=True)
         env = ScaledFloatFrame(env)
         env = FrameStack(env, 4)
+        env = ImageToPyTorch(env)
         return env
 
     @classmethod
@@ -103,7 +156,9 @@ class Trainer(monobeast.Trainer):
         space = ObservationSpace(*obs_space.spaces)
         specs = super().buffer_specs(space.image, num_actions, T)
         nvec = space.mission.nvec
-        return dict(mission=BufferSpec(size=nvec.shape, dtype=torch.uint8), **specs)
+        return dict(
+            mission=BufferSpec(size=[T + 1, *nvec.shape], dtype=torch.int32), **specs
+        )
 
     @classmethod
     def build_network(cls, flags, gym_env):

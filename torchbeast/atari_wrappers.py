@@ -312,11 +312,7 @@ class ImageToPyTorch(gym.ObservationWrapper):
 
     def __init__(self, env):
         super(ImageToPyTorch, self).__init__(env)
-        obs_space = (
-            ObservationSpace(*self.observation_space.spaces).image
-            if isinstance(self.observation_space, Tuple)
-            else self.observation_space
-        )
+        obs_space = self.observation_space
         old_shape = obs_space.shape
         self.observation_space = gym.spaces.Box(
             low=0,

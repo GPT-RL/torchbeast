@@ -6,12 +6,12 @@ from torch.nn import functional as F
 class AtariNet(nn.Module):
     def __init__(self, observation_shape, num_actions, use_lstm):
         super(AtariNet, self).__init__()
-        self.observation_shape = observation_shape
+        self.observation_shape = d, w, h = observation_shape
         self.num_actions = num_actions
 
         # Feature extraction.
         self.conv1 = nn.Conv2d(
-            in_channels=self.observation_shape[0],
+            in_channels=d,
             out_channels=32,
             kernel_size=(8, 8),
             stride=(4, 4),
@@ -20,7 +20,7 @@ class AtariNet(nn.Module):
         self.conv3 = nn.Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1))
 
         # Fully connected layer.
-        self.fc = nn.Linear(3136, 512)
+        self.fc = self.get_fc()
 
         # FC output size + one-hot of last action + last reward.
         core_output_size = self.get_core_output_size(num_actions)
@@ -31,6 +31,10 @@ class AtariNet(nn.Module):
 
         self.policy = nn.Linear(core_output_size, self.num_actions)
         self.baseline = nn.Linear(core_output_size, 1)
+
+    @staticmethod
+    def get_fc():
+        return nn.Linear(3136, 512)
 
     def get_core_output_size(self, num_actions):
         return self.fc.out_features + num_actions + 1

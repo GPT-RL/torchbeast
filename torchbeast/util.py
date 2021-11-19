@@ -37,3 +37,7 @@ class LazyFrames(object):
 
     def frame(self, i):
         return self._force()[..., i]
+
+    @property
+    def shape(self):
+        return self._force().shape
