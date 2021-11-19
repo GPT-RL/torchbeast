@@ -4,7 +4,7 @@ from torch.nn import functional as F
 
 
 class AtariNet(nn.Module):
-    def __init__(self, observation_shape, num_actions, use_lstm=False):
+    def __init__(self, observation_shape, num_actions, use_lstm):
         super(AtariNet, self).__init__()
         self.observation_shape = observation_shape
         self.num_actions = num_actions
@@ -23,7 +23,7 @@ class AtariNet(nn.Module):
         self.fc = nn.Linear(3136, 512)
 
         # FC output size + one-hot of last action + last reward.
-        core_output_size = self.fc.out_features + num_actions + 1
+        core_output_size = self.get_core_output_size(num_actions)
 
         self.use_lstm = use_lstm
         if use_lstm:
@@ -31,6 +31,9 @@ class AtariNet(nn.Module):
 
         self.policy = nn.Linear(core_output_size, self.num_actions)
         self.baseline = nn.Linear(core_output_size, 1)
+
+    def get_core_output_size(self, num_actions):
+        return self.fc.out_features + num_actions + 1
 
     def initial_state(self, batch_size):
         if not self.use_lstm:
@@ -41,21 +44,7 @@ class AtariNet(nn.Module):
         )
 
     def forward(self, inputs, core_state=()):
-        x = inputs["frame"]  # [T, B, C, H, W].
-        T, B, *_ = x.shape
-        x = torch.flatten(x, 0, 1)  # Merge time and batch.
-        x = x.float() / 255.0
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = x.view(T * B, -1)
-        x = F.relu(self.fc(x))
-
-        one_hot_last_action = F.one_hot(
-            inputs["last_action"].view(T * B), self.num_actions
-        ).float()
-        clipped_reward = torch.clamp(inputs["reward"], -1, 1).view(T * B, 1)
-        core_input = torch.cat([x, clipped_reward, one_hot_last_action], dim=-1)
+        T, B, core_input = self.get_core_input(inputs)
 
         if self.use_lstm:
             core_input = core_input.view(T, B, -1)
@@ -91,3 +80,20 @@ class AtariNet(nn.Module):
             dict(policy_logits=policy_logits, baseline=baseline, action=action),
             core_state,
         )
+
+    def get_core_input(self, inputs):
+        x = inputs["frame"]  # [T, B, C, H, W].
+        T, B, *_ = x.shape
+        x = torch.flatten(x, 0, 1)  # Merge time and batch.
+        x = x.float() / 255.0
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        x = x.view(T * B, -1)
+        x = F.relu(self.fc(x))
+        one_hot_last_action = F.one_hot(
+            inputs["last_action"].view(T * B), self.num_actions
+        ).float()
+        clipped_reward = torch.clamp(inputs["reward"], -1, 1).view(T * B, 1)
+        core_input = torch.cat([x, clipped_reward, one_hot_last_action], dim=-1)
+        return T, B, core_input

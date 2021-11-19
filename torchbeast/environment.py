@@ -3,7 +3,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Generator, NamedTuple, cast
+from typing import Generator, NamedTuple, Union, cast
 
 import PIL.Image
 import gym
@@ -16,6 +16,8 @@ import torch
 from pybullet_utils import bullet_client
 from torch.nn.utils.rnn import pad_sequence
 from transformers import GPT2Tokenizer
+
+from torchbeast.util import LazyFrames
 
 PROJECTION_MATRIX = p.computeProjectionMatrixFOV(
     fov=50, aspect=1, nearVal=0.01, farVal=10
@@ -32,7 +34,7 @@ class ObservationSpace(NamedTuple):
 
 class Observation(NamedTuple):
     mission: np.ndarray
-    image: np.ndarray
+    image: Union[np.ndarray, LazyFrames]
 
 
 class Action(NamedTuple):
@@ -112,7 +114,7 @@ class PointMassEnv(gym.Env):
         self.observation_space = spaces.Tuple(
             ObservationSpace(
                 mission=spaces.MultiDiscrete(
-                    np.ones_like(padded[0]) * padded.max().item()
+                    np.uint8(np.ones_like(padded[0]) * padded.max().item())
                 ),
                 image=spaces.Box(
                     low=0,

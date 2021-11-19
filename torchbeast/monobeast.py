@@ -21,8 +21,9 @@ import time
 import timeit
 import traceback
 import typing
+from dataclasses import asdict, dataclass
 
-from torchbeast.environment import PointMassEnv
+
 from torchbeast.net import AtariNet
 
 os.environ["OMP_NUM_THREADS"] = "1"  # Necessary for multithreading.
@@ -107,6 +108,12 @@ logging.basicConfig(
 Buffers = typing.Dict[str, typing.List[torch.Tensor]]
 
 
+@dataclass
+class BufferSpec:
+    size: typing.List[int]
+    dtype: torch.dtype
+
+
 class Trainer:
     @staticmethod
     def compute_baseline_loss(advantages):
@@ -147,7 +154,7 @@ class Trainer:
             gym_env = cls.create_env(flags)
             seed = actor_index ^ int.from_bytes(os.urandom(4), byteorder="little")
             gym_env.seed(seed)
-            env = environment.Environment(gym_env)  # TODO
+            env = cls.wrap_env(gym_env)
             env_output = env.initial()
             agent_state = model.initial_state(batch_size=1)
             agent_output, unused_state = model(env_output, agent_state)
@@ -195,6 +202,10 @@ class Trainer:
             traceback.print_exc()
             print()
             raise e
+
+    @staticmethod
+    def wrap_env(gym_env):
+        return environment.Environment(gym_env)
 
     @staticmethod
     def get_batch(
@@ -307,25 +318,30 @@ class Trainer:
             actor_model.load_state_dict(model.state_dict())
             return stats
 
-    @staticmethod
-    def create_buffers(flags, obs_shape, num_actions) -> Buffers:
+    @classmethod
+    def create_buffers(cls, flags, obs_space, num_actions) -> Buffers:
         T = flags.unroll_length
-        specs = dict(
-            frame=dict(size=(T + 1, *obs_shape), dtype=torch.uint8),  # TODO
-            reward=dict(size=(T + 1,), dtype=torch.float32),
-            done=dict(size=(T + 1,), dtype=torch.bool),
-            episode_return=dict(size=(T + 1,), dtype=torch.float32),
-            episode_step=dict(size=(T + 1,), dtype=torch.int32),
-            policy_logits=dict(size=(T + 1, num_actions), dtype=torch.float32),
-            baseline=dict(size=(T + 1,), dtype=torch.float32),
-            last_action=dict(size=(T + 1,), dtype=torch.int64),
-            action=dict(size=(T + 1,), dtype=torch.int64),
-        )
+        specs = cls.buffer_specs(obs_space, num_actions, T)
         buffers: Buffers = {key: [] for key in specs}
         for _ in range(flags.num_buffers):
             for key in buffers:
-                buffers[key].append(torch.empty(**specs[key]).share_memory_())
+                buffers[key].append(torch.empty(**asdict(specs[key])).share_memory_())
         return buffers
+
+    @staticmethod
+    def buffer_specs(obs_space, num_actions, T):
+        obs_shape = obs_space.shape
+        return dict(
+            frame=BufferSpec(size=[T + 1, *obs_shape], dtype=torch.uint8),
+            reward=BufferSpec(size=[T + 1], dtype=torch.float32),
+            done=BufferSpec(size=[T + 1], dtype=torch.bool),
+            episode_return=BufferSpec(size=[T + 1], dtype=torch.float32),
+            episode_step=BufferSpec(size=[T + 1], dtype=torch.int32),
+            policy_logits=BufferSpec(size=[T + 1, num_actions], dtype=torch.float32),
+            baseline=BufferSpec(size=[T + 1], dtype=torch.float32),
+            last_action=BufferSpec(size=[T + 1], dtype=torch.int64),
+            action=BufferSpec(size=[T + 1], dtype=torch.int64),
+        )
 
     @classmethod
     def train(cls, flags):  # pylint: disable=too-many-branches, too-many-statements
@@ -357,13 +373,8 @@ class Trainer:
             flags.device = torch.device("cpu")
 
         env = cls.create_env(flags)
-
-        model = AtariNet(
-            env.observation_space.shape, env.action_space.n, flags.use_lstm
-        )  # TODO
-        buffers = cls.create_buffers(
-            flags, env.observation_space.shape, model.num_actions
-        )
+        model = cls.build_network(flags, env)
+        buffers = cls.create_buffers(flags, env.observation_space, model.num_actions)
 
         model.share_memory()
 
@@ -396,9 +407,7 @@ class Trainer:
             actor.start()
             actor_processes.append(actor)
 
-        learner_model = AtariNet(
-            env.observation_space.shape, env.action_space.n, flags.use_lstm
-        ).to(device=flags.device)
+        learner_model = cls.build_network(flags, env).to(device=flags.device)
 
         optimizer = torch.optim.RMSprop(
             learner_model.parameters(),
@@ -538,10 +547,8 @@ class Trainer:
             )
 
         gym_env = cls.create_env(flags)
-        env = environment.Environment(gym_env)
-        model = AtariNet(
-            gym_env.observation_space.shape, gym_env.action_space.n, flags.use_lstm
-        )
+        env = cls.wrap_env(gym_env)
+        model = cls.build_network(flags, gym_env)
         model.eval()
         checkpoint = torch.load(checkpointpath, map_location="cpu")
         model.load_state_dict(checkpoint["model_state_dict"])
@@ -569,19 +576,22 @@ class Trainer:
             sum(returns) / len(returns),
         )
 
+    @classmethod
+    def build_network(cls, flags, gym_env):
+        return AtariNet(
+            gym_env.observation_space.shape, gym_env.action_space.n, flags.use_lstm
+        )
+
     @staticmethod
     def create_env(flags):
-        env = (
-            PointMassEnv()
-            if flags.env == "point-mass"
-            else atari_wrappers.wrap_deepmind(
+        return atari_wrappers.wrap_pytorch(
+            atari_wrappers.wrap_deepmind(
                 atari_wrappers.make_atari(flags.env),
                 clip_rewards=False,
                 frame_stack=True,
                 scale=False,
             )
         )
-        return atari_wrappers.wrap_pytorch(env)
 
     @classmethod
     def main(cls, flags):
