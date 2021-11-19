@@ -46,12 +46,18 @@ class Actions(Enum):
     NO_OP = Action(0, 0, False)
     LEFT = Action(3, 0, False)
     RIGHT = Action(-3, 0, False)
-    FORWARD = Action(0, 1.8, False)
-    BACKWARD = Action(0, -1.8, False)
+    FORWARD = Action(0, 0.18, False)
+    BACKWARD = Action(0, -0.18, False)
     PICTURE = Action(0, 0, True)
 
 
 ACTIONS = [*Actions]
+
+
+class URDF(NamedTuple):
+    name: str
+    path: Path
+    z: float
 
 
 @dataclass
@@ -62,14 +68,14 @@ class PointMassEnv(gym.Env):
     tokenizer: GPT2Tokenizer
     image_width: float = 96
     image_height: float = 72
-    env_bounds: float = 2.5
+    env_bounds: float = 5
     cameraYaw: float = 35
 
     def __post_init__(
         self,
     ):
 
-        self._max_episode_steps = 200
+        self._max_episode_steps = 300
         self.action_space = spaces.Discrete(5)
 
         def urdfs():
@@ -78,12 +84,16 @@ class PointMassEnv(gym.Env):
                 assert urdf.exists()
                 with Path(subdir, "meta.json").open() as f:
                     meta = json.load(f)
-                yield meta["model_cat"], urdf
+                with Path(subdir, "bounding_box.json").open() as f:
+                    box = json.load(f)
+                _, _, z_min = box["min"]
+                yield URDF(name=meta["model_cat"], path=urdf, z=-z_min)
 
-        self.urdfs = OrderedDict(urdfs())
+        self.urdfs = list(urdfs())
+        names, paths, zs = zip(*urdfs())
 
         def tokens() -> Generator[torch.Tensor, None, None]:
-            for k in self.urdfs:
+            for k in names:
                 encoded = self.tokenizer.encode(k, return_tensors="pt")
                 tensor = cast(torch.Tensor, encoded)
                 yield tensor.squeeze(0)
@@ -93,7 +103,7 @@ class PointMassEnv(gym.Env):
             padding_value=self.tokenizer.eos_token_id,
         ).T
 
-        self.tokens = OrderedDict(zip(self.urdfs, padded))
+        self.tokens = OrderedDict(zip(names, padded))
 
         self.observation_space = spaces.Tuple(
             ObservationSpace(
@@ -172,20 +182,20 @@ class PointMassEnv(gym.Env):
         self.cameraYaw = 0
 
         for base_position in [
-            [self.env_bounds, self.env_bounds, 0],
-            [-self.env_bounds, -self.env_bounds, 0],
+            [self.env_bounds / 2, self.env_bounds / 2, 0],
+            [-self.env_bounds / 2, -self.env_bounds / 2, 0],
         ]:
-            urdfs = list(self.urdfs.items())
-            name, urdf = urdfs[self.np_random.choice(len(urdfs))]
-            missions.append(name)
+            urdf = self.urdfs[self.np_random.choice(len(self.urdfs))]
+            missions.append(urdf.name)
+            base_position[-1] = urdf.z
 
             try:
                 goal = self._p.loadURDF(
-                    str(urdf), basePosition=base_position, useFixedBase=True
+                    str(urdf.path), basePosition=base_position, useFixedBase=True
                 )
             except p.error:
                 print(p.error)
-                raise RuntimeError(f"Error while loading {urdf}")
+                raise RuntimeError(f"Error while loading {urdf.path}")
             goals.append(goal)
 
             collisionFilterGroup = 0
@@ -209,15 +219,14 @@ class PointMassEnv(gym.Env):
         self._p.configureDebugVisualizer(p.COV_ENABLE_GUI, False)
 
         self._p.setGravity(0, 0, -10)
-        look_at = [0, 0, 0.1]
-        distance = 7
-        yaw = 0
-        self._p.resetDebugVisualizerCamera(distance, yaw, -89, look_at)
-        cybe = self._p.createCollisionShape(p.GEOM_BOX, halfExtents=[5, 5, 0.1])
-        visplaneId = self._p.createVisualShape(
-            p.GEOM_BOX, halfExtents=[5, 5, 0.1], rgbaColor=[1, 1, 1, 1]
+        halfExtents = [1.5 * self.env_bounds, 1.5 * self.env_bounds, 0.1]
+        floor_collision = self._p.createCollisionShape(
+            p.GEOM_BOX, halfExtents=halfExtents
         )
-        self._p.createMultiBody(0, cybe, visplaneId, [0, 0, -0.2])
+        floor_visual = self._p.createVisualShape(
+            p.GEOM_BOX, halfExtents=halfExtents, rgbaColor=[1, 1, 1, 0.5]
+        )
+        self._p.createMultiBody(0, floor_collision, floor_visual, [0, 0, -0.2])
 
         self._p.resetBasePositionAndOrientation(self.mass, [0, 0, 0.6], [0, 0, 0, 1])
         action = yield self.get_observation()
@@ -227,7 +236,6 @@ class PointMassEnv(gym.Env):
             s = self.get_observation()
             if ACTIONS[action].value.take_picture:
                 PIL.Image.fromarray(np.uint8(s.image)).show()
-
             r = 0
             t = False
             action = yield s, r, t, {}
@@ -246,14 +254,11 @@ class PointMassEnv(gym.Env):
         x, y, _, _ = p.getQuaternionFromEuler(
             [np.pi, 0, np.deg2rad(2 * self.cameraYaw) + np.pi]
         )
-        force = np.array([forward * x, forward * y, 0])
-
-        time.sleep(3.0 / 240.0)
-
-        x_shift, y_shift, *_ = force * 0.1  # put it to the correct scale
+        x_shift = forward * x
+        y_shift = forward * y
         x, y, *_ = self._p.getBasePositionAndOrientation(self.mass)[0]
-        new_x = np.clip(x + x_shift, -2 * self.env_bounds, 2 * self.env_bounds)
-        new_y = np.clip(y + y_shift, -2 * self.env_bounds, 2 * self.env_bounds)
+        new_x = np.clip(x + x_shift, -self.env_bounds, self.env_bounds)
+        new_y = np.clip(y + y_shift, -self.env_bounds, self.env_bounds)
         self._p.changeConstraint(self.mass_cid, [new_x, new_y, -0.1], maxForce=10)
         for i in range(0, 20):
             self._p.stepSimulation()
@@ -331,9 +336,16 @@ def main():
     steps = 0
     action = Actions.NO_OP
 
+    mapping = {
+        p.B3G_RIGHT_ARROW: Actions.RIGHT,
+        p.B3G_LEFT_ARROW: Actions.LEFT,
+        p.B3G_UP_ARROW: Actions.FORWARD,
+        p.B3G_DOWN_ARROW: Actions.BACKWARD,
+        p.B3G_SPACE: Actions.PICTURE,
+    }
+
     while True:
         try:
-
             spherePos, orn = p.getBasePositionAndOrientation(env.mass)
 
             cameraTargetPosition = spherePos
@@ -343,20 +355,11 @@ def main():
 
             keys = p.getKeyboardEvents()
             for k, v in keys.items():
-
-                mapping = {
-                    p.B3G_RIGHT_ARROW: Actions.RIGHT,
-                    p.B3G_LEFT_ARROW: Actions.LEFT,
-                    p.B3G_UP_ARROW: Actions.FORWARD,
-                    p.B3G_DOWN_ARROW: Actions.BACKWARD,
-                    p.B3G_SPACE: Actions.PICTURE,
-                }
-
+                if v & p.KEY_WAS_RELEASED and k in mapping:
+                    action = Actions.NO_OP
+            for k, v in keys.items():
                 if v & p.KEY_WAS_TRIGGERED:
                     action = mapping.get(k, Actions.NO_OP)
-                elif v & p.KEY_WAS_RELEASED:
-                    if k in mapping:
-                        action = Actions.NO_OP
 
             turn = action.value.turn
             action_index = ACTIONS.index(action)
@@ -365,10 +368,11 @@ def main():
                 action = Actions.NO_OP
             cameraYaw += turn
             if t:
-                cameraYaw = 35
+                cameraYaw = 0
                 env.reset()
 
             steps += 1
+            # time.sleep(0.1)
         except KeyboardInterrupt:
             print("Received keyboard interrupt. Exiting.")
             return
