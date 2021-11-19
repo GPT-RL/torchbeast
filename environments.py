@@ -78,6 +78,8 @@ class PointMassEnv(gym.Env):
 
         self._max_episode_steps = 500
         self.action_space = spaces.Discrete(5)
+        with Path("model_ids.json").open() as f:
+            self.model_ids = set(json.load(f))
 
         def urdfs():
             for subdir in Path("dataset").iterdir():
@@ -88,7 +90,9 @@ class PointMassEnv(gym.Env):
                 with Path(subdir, "bounding_box.json").open() as f:
                     box = json.load(f)
                 _, _, z_min = box["min"]
-                yield URDF(name=meta["model_cat"], path=urdf, z=-z_min)
+                model_id = meta["model_id"]
+                if model_id in self.model_ids:
+                    yield URDF(name=meta["model_cat"], path=urdf, z=-z_min)
 
         self.urdfs = list(urdfs())
         names, paths, zs = zip(*urdfs())
