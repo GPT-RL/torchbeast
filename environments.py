@@ -4,7 +4,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Generator, NamedTuple, TypeVar, cast
+from typing import Generator, NamedTuple, cast
 
 import PIL.Image
 import gym
@@ -17,16 +17,6 @@ import torch
 from pybullet_utils import bullet_client
 from torch.nn.utils.rnn import pad_sequence
 from transformers import GPT2Tokenizer
-
-GUI = False
-VIEW_MATRIX = p.computeViewMatrixFromYawPitchRoll(
-    cameraTargetPosition=[0, 0, 0],
-    distance=2,
-    yaw=0,
-    pitch=10,
-    roll=0,
-    upAxisIndex=2,
-)
 
 PROJECTION_MATRIX = p.computeProjectionMatrixFOV(
     fov=50, aspect=1, nearVal=0.01, farVal=10
@@ -65,7 +55,7 @@ ACTIONS = [*Actions]
 
 
 @dataclass
-class PointMassEnv(gym.GoalEnv):
+class PointMassEnv(gym.Env):
     metadata = {"render.modes": ["human", "rgb_array"], "video.frames_per_second": 60}
     sparse_rew_thresh: float
     mission_nvec: np.ndarray
@@ -216,7 +206,7 @@ class PointMassEnv(gym.GoalEnv):
             )
         self.mission = self.np_random.choice(missions)
 
-        self._p.configureDebugVisualizer(p.COV_ENABLE_GUI, GUI)
+        self._p.configureDebugVisualizer(p.COV_ENABLE_GUI, False)
 
         self._p.setGravity(0, 0, -10)
         look_at = [0, 0, 0.1]
@@ -237,7 +227,6 @@ class PointMassEnv(gym.GoalEnv):
             s = self.get_observation()
             if ACTIONS[action].value.take_picture:
                 PIL.Image.fromarray(np.uint8(s.image)).show()
-                breakpoint()
 
             r = 0
             t = False
