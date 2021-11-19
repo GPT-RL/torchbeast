@@ -64,19 +64,18 @@ class URDF(NamedTuple):
 @dataclass
 class PointMassEnv(gym.Env):
     metadata = {"render.modes": ["human", "rgb_array"], "video.frames_per_second": 60}
-    sparse_rew_thresh: float
-    mission_nvec: np.ndarray
-    tokenizer: GPT2Tokenizer
-    image_width: float = 96
-    image_height: float = 72
-    env_bounds: float = 5
     cameraYaw: float = 35
+    env_bounds: float = 5
+    image_height: float = 72
+    image_width: float = 96
+    max_episode_steps = 200
+    model_name: str = "gpt2"
 
     def __post_init__(
         self,
     ):
 
-        self._max_episode_steps = 500
+        tokenizer = GPT2Tokenizer.from_pretrained(self.model_name)
         self.action_space = spaces.Discrete(5)
         with Path("model_ids.json").open() as f:
             self.model_ids = set(json.load(f))
@@ -99,13 +98,13 @@ class PointMassEnv(gym.Env):
 
         def tokens() -> Generator[torch.Tensor, None, None]:
             for k in names:
-                encoded = self.tokenizer.encode(k, return_tensors="pt")
+                encoded = tokenizer.encode(k, return_tensors="pt")
                 tensor = cast(torch.Tensor, encoded)
                 yield tensor.squeeze(0)
 
         padded = pad_sequence(
             list(tokens()),
-            padding_value=self.tokenizer.eos_token_id,
+            padding_value=tokenizer.eos_token_id,
         ).T
 
         self.tokens = OrderedDict(zip(names, padded))
@@ -113,7 +112,7 @@ class PointMassEnv(gym.Env):
         self.observation_space = spaces.Tuple(
             ObservationSpace(
                 mission=spaces.MultiDiscrete(
-                    np.ones_like(self.mission_nvec[0]) * padded.max().item()
+                    np.ones_like(padded[0]) * padded.max().item()
                 ),
                 image=spaces.Box(
                     low=0,
@@ -156,30 +155,6 @@ class PointMassEnv(gym.Env):
             image=rgbPixels.astype(np.float32),
             mission=self.tokens[self.mission],
         )
-
-    def compute_reward_sparse(self, achieved_goal, desired_goal):
-
-        initially_vectorized = True
-        dimension = 2
-        if len(achieved_goal.shape) == 1:
-            achieved_goal = np.expand_dims(np.array(achieved_goal), axis=0)
-            desired_goal = np.expand_dims(np.array(desired_goal), axis=0)
-            initially_vectorized = False
-
-        reward = np.zeros(len(achieved_goal))
-        for g in range(0, len(achieved_goal[0]) // dimension):  # piecewise reward
-            g = g * dimension  # increments of 2
-            current_distance = np.linalg.norm(
-                achieved_goal[:, g : g + dimension]
-                - desired_goal[:, g : g + dimension],
-                axis=1,
-            )
-            reward += np.where(current_distance > self.sparse_rew_thresh, -1, 0)
-
-        if not initially_vectorized:
-            return reward[0]
-        else:
-            return reward
 
     def generator(self):
         missions = []
@@ -245,7 +220,7 @@ class PointMassEnv(gym.Env):
         self._p.resetBasePositionAndOrientation(self.mass, [0, 0, 0.6], [0, 0, 0, 1])
         action = yield self.get_observation()
 
-        for global_step in range(self._max_episode_steps):
+        for global_step in range(self.max_episode_steps):
             a = ACTIONS[action].value
 
             cameraYaw += a.turn
@@ -342,13 +317,9 @@ class PointMassEnv(gym.Env):
 
 
 def main():
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
     env = PointMassEnv(
-        sparse_rew_thresh=0.3,
-        mission_nvec=np.array([400] * 8),
         image_width=200,
         image_height=200,
-        tokenizer=tokenizer,
     )
     env.render(mode="human")
     t = True

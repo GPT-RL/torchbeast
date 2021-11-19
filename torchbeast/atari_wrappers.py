@@ -29,6 +29,9 @@ from collections import deque
 import gym
 from gym import spaces
 import cv2
+from gym.spaces import Tuple
+
+from torchbeast.environment import ObservationSpace
 
 cv2.ocl.setUseOpenCL(False)
 
@@ -341,7 +344,12 @@ class ImageToPyTorch(gym.ObservationWrapper):
 
     def __init__(self, env):
         super(ImageToPyTorch, self).__init__(env)
-        old_shape = self.observation_space.shape
+        obs_space = (
+            ObservationSpace(*self.observation_space.spaces).image
+            if isinstance(self.observation_space, Tuple)
+            else self.observation_space
+        )
+        old_shape = obs_space.shape
         self.observation_space = gym.spaces.Box(
             low=0,
             high=255,
