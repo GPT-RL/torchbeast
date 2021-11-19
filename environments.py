@@ -1,5 +1,4 @@
 import json
-import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
@@ -37,18 +36,20 @@ class Observation(NamedTuple):
 
 
 class Action(NamedTuple):
-    turn: float
-    forward: float
-    take_picture: bool
+    turn: float = 0
+    forward: float = 0
+    done: bool = False
+    take_picture: bool = False
 
 
 class Actions(Enum):
-    NO_OP = Action(0, 0, False)
-    LEFT = Action(3, 0, False)
-    RIGHT = Action(-3, 0, False)
-    FORWARD = Action(0, 0.18, False)
-    BACKWARD = Action(0, -0.18, False)
-    PICTURE = Action(0, 0, True)
+    LEFT = Action(3, 0)
+    RIGHT = Action(-3, 0)
+    FORWARD = Action(0, 0.18)
+    BACKWARD = Action(0, -0.18)
+    DONE = Action(done=True)
+    PICTURE = Action(take_picture=True)
+    NO_OP = Action()
 
 
 ACTIONS = [*Actions]
@@ -75,7 +76,7 @@ class PointMassEnv(gym.Env):
         self,
     ):
 
-        self._max_episode_steps = 300
+        self._max_episode_steps = 500
         self.action_space = spaces.Discrete(5)
 
         def urdfs():
@@ -179,7 +180,7 @@ class PointMassEnv(gym.Env):
     def generator(self):
         missions = []
         goals = []
-        self.cameraYaw = 0
+        cameraYaw = 0
 
         for base_position in [
             [self.env_bounds / 2, self.env_bounds / 2, 0],
@@ -214,7 +215,10 @@ class PointMassEnv(gym.Env):
                 self.relativeChildPosition,
                 self.relativeChildOrientation,
             )
-        self.mission = self.np_random.choice(missions)
+        choice = self.np_random.choice(2)
+        self.goal = goals[choice]
+        self.mission = missions[choice]
+        i = dict(mission=self.mission, goals=goals)
 
         self._p.configureDebugVisualizer(p.COV_ENABLE_GUI, False)
 
@@ -232,39 +236,46 @@ class PointMassEnv(gym.Env):
         action = yield self.get_observation()
 
         for global_step in range(self._max_episode_steps):
-            self.apply_action(action)
+            a = ACTIONS[action].value
+
+            cameraYaw += a.turn
+            x, y, _, _ = p.getQuaternionFromEuler(
+                [np.pi, 0, np.deg2rad(2 * cameraYaw) + np.pi]
+            )
+            x_shift = a.forward * x
+            y_shift = a.forward * y
+            x, y, *_ = self._p.getBasePositionAndOrientation(self.mass)[0]
+            new_x = np.clip(x + x_shift, -self.env_bounds, self.env_bounds)
+            new_y = np.clip(y + y_shift, -self.env_bounds, self.env_bounds)
+            self._p.changeConstraint(self.mass_cid, [new_x, new_y, -0.1], maxForce=10)
+            for _ in range(0, 20):
+                self._p.stepSimulation()
+
             s = self.get_observation()
             if ACTIONS[action].value.take_picture:
                 PIL.Image.fromarray(np.uint8(s.image)).show()
-            r = 0
-            t = False
-            action = yield s, r, t, {}
+            t = ACTIONS[action].value.done
+            if t:
+                (*goal_poss, pos), _ = zip(
+                    *[p.getBasePositionAndOrientation(g) for g in (*goals, self.mass)]
+                )
+                dists = [np.linalg.norm(np.array(pos) - np.array(g)) for g in goal_poss]
+                r = float(np.argmin(dists) == choice)
+            else:
+                r = 0
+            action = yield s, r, t, i
 
-        self.apply_action(action)
         s = self.get_observation()
         r = 0
         t = True
-        for goal in goals:
-            self._p.removeBody(goal)
-        yield s, r, t, {}
-
-    def apply_action(self, action):
-        turn, forward, _ = ACTIONS[action].value
-        self.cameraYaw += turn
-        x, y, _, _ = p.getQuaternionFromEuler(
-            [np.pi, 0, np.deg2rad(2 * self.cameraYaw) + np.pi]
-        )
-        x_shift = forward * x
-        y_shift = forward * y
-        x, y, *_ = self._p.getBasePositionAndOrientation(self.mass)[0]
-        new_x = np.clip(x + x_shift, -self.env_bounds, self.env_bounds)
-        new_y = np.clip(y + y_shift, -self.env_bounds, self.env_bounds)
-        self._p.changeConstraint(self.mass_cid, [new_x, new_y, -0.1], maxForce=10)
-        for i in range(0, 20):
-            self._p.stepSimulation()
+        yield s, r, t, i
 
     def step(self, action: int):
-        return self.iterator.send(action)
+        s, r, t, i = self.iterator.send(action)
+        if t:
+            for goal in i["goals"]:
+                self._p.removeBody(goal)
+        return s, r, t, i
 
     def reset(self):
         if not self.physics_client_active:
@@ -330,10 +341,11 @@ def main():
         tokenizer=tokenizer,
     )
     env.render(mode="human")
-    env.reset()
+    t = True
+    r = None
+    printed_mission = False
 
-    cameraYaw = 0
-    steps = 0
+    cameraYaw = None
     action = Actions.NO_OP
 
     mapping = {
@@ -341,11 +353,18 @@ def main():
         p.B3G_LEFT_ARROW: Actions.LEFT,
         p.B3G_UP_ARROW: Actions.FORWARD,
         p.B3G_DOWN_ARROW: Actions.BACKWARD,
-        p.B3G_SPACE: Actions.PICTURE,
+        p.B3G_RETURN: Actions.PICTURE,
+        p.B3G_SPACE: Actions.DONE,
     }
 
     while True:
         try:
+            if t:
+                cameraYaw = 0
+                env.reset()
+                printed_mission = False
+                if r is not None:
+                    print("Reward:", r)
             spherePos, orn = p.getBasePositionAndOrientation(env.mass)
 
             cameraTargetPosition = spherePos
@@ -363,16 +382,15 @@ def main():
 
             turn = action.value.turn
             action_index = ACTIONS.index(action)
-            o, r, t, _ = env.step(action_index)
+            o, r, t, i = env.step(action_index)
+            if not printed_mission:
+                print(i["mission"])
+                printed_mission = True
+
             if action == Actions.PICTURE:
                 action = Actions.NO_OP
             cameraYaw += turn
-            if t:
-                cameraYaw = 0
-                env.reset()
 
-            steps += 1
-            # time.sleep(0.1)
         except KeyboardInterrupt:
             print("Received keyboard interrupt. Exiting.")
             return
