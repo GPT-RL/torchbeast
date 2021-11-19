@@ -185,12 +185,18 @@ class PointMassEnv(gym.Env):
         missions = []
         goals = []
         cameraYaw = 0
+        urdfs = [
+            self.urdfs[i]
+            for i in self.np_random.choice(len(self.urdfs), size=2, replace=False)
+        ]
 
-        for base_position in [
-            [self.env_bounds / 2, self.env_bounds / 2, 0],
-            [-self.env_bounds / 2, -self.env_bounds / 2, 0],
-        ]:
-            urdf = self.urdfs[self.np_random.choice(len(self.urdfs))]
+        for base_position, urdf in zip(
+            [
+                [self.env_bounds / 2, self.env_bounds / 2, 0],
+                [-self.env_bounds / 2, -self.env_bounds / 2, 0],
+            ],
+            urdfs,
+        ):
             missions.append(urdf.name)
             base_position[-1] = urdf.z
 
