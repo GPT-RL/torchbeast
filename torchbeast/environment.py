@@ -162,10 +162,12 @@ class PointMassEnv(gym.Env):
         self.relativeChildOrientation = [0, 0, 0, 1]
 
         if self.is_render:
-            self._p = bullet_client.BulletClient(connection_mode=p.GUI)
+            with suppress_stdout():
+                self._p = bullet_client.BulletClient(connection_mode=p.GUI)
             self._p.configureDebugVisualizer(self._p.COV_ENABLE_SHADOWS, 0)
         else:
-            self._p = bullet_client.BulletClient(connection_mode=p.DIRECT)
+            with suppress_stdout():
+                self._p = bullet_client.BulletClient(connection_mode=p.DIRECT)
 
         sphereRadius = 0.2
         mass = 1
@@ -338,11 +340,9 @@ class PointMassEnv(gym.Env):
             raise NotImplementedError
 
     def close(self):
-        print("closing")
         self._p.disconnect()
 
     def _seed(self, seed=None):
-        print("seeding")
         self.np_random, seed = gym.utils.seeding.np_random(seed)
         return [seed]
 
