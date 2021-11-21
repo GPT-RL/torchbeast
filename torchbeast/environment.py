@@ -1,7 +1,6 @@
 import json
 import os
 import sys
-import warnings
 from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -9,12 +8,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Generator, NamedTuple, Union, cast
 
-import PIL.Image
 import gym
 import gym.spaces as spaces
 import gym.utils
 import gym.utils.seeding
 import numpy as np
+import PIL.Image
 import pybullet as p
 import torch
 from pybullet_utils import bullet_client
@@ -136,7 +135,7 @@ class PointMassEnv(gym.Env):
         ).T.numpy()
         if self.reindex_tokens:
             _, indices = np.unique(padded, return_inverse=True)
-            _padded = indices.reshape(padded.shape)
+            padded = indices.reshape(padded.shape)
 
         self.tokens = OrderedDict(zip(names, padded))
 

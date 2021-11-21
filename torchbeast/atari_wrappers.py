@@ -24,14 +24,13 @@
 #   https://raw.githubusercontent.com/openai/baselines/7c520852d9cf4eaaad326a3d548efc915dc60c10/baselines/common/atari_wrappers.py
 # and slightly modified.
 
-import numpy as np
 from collections import deque
-import gym
-from gym import spaces
-import cv2
-from gym.spaces import Tuple
 
-from torchbeast.environment import ObservationSpace
+import cv2
+import gym
+import numpy as np
+from gym import spaces
+
 from torchbeast.lazy_frames import LazyFrames
 
 cv2.ocl.setUseOpenCL(False)
