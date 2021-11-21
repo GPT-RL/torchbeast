@@ -34,6 +34,10 @@ RUN apt-get update -q \
       # for Atari Roms and redis
       wget \
 
+      # for opencv-python
+      libgl1-mesa-glx \
+      libglib2.0-0 \
+
  && apt-get clean
 
 FROM base AS python-deps
@@ -51,9 +55,6 @@ RUN apt-get update -q \
       unrar \
       unzip \
 
-      # for opencv-python (https://docs.opencv.org/3.4/d7/d9f/tutorial_linux_install.html)
-      cmake git libgtk2.0-dev pkg-config libavcodec-dev libavformat-dev libswscale-dev \
-
  && apt-get clean
 
 WORKDIR "/deps"
@@ -63,16 +64,17 @@ COPY pyproject.toml poetry.lock /deps/
 RUN pip install poetry \
  && poetry install
 
+ENV VIRTUAL_ENV=/root/.cache/pypoetry/virtualenvs/torchbeast-K3BlsyQa-py3.8/
 RUN wget "http://www.atarimania.com/roms/Roms.rar" \
  && unrar e Roms.rar \
  && unzip ROMS.zip \
- && /root/.cache/pypoetry/virtualenvs/torchbeast-K3BlsyQa-py3.9/bin/python -m atari_py.import_roms ROMS/
+ && $VIRTUAL_ENV/bin/python -m atari_py.import_roms ROMS/
 
 
 FROM base AS runtime
 
 WORKDIR "/project"
-ENV VIRTUAL_ENV=/root/.cache/pypoetry/virtualenvs/torchbeast-K3BlsyQa-py3.9/
+ENV VIRTUAL_ENV=/root/.cache/pypoetry/virtualenvs/torchbeast-K3BlsyQa-py3.8/
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 COPY --from=python-deps $VIRTUAL_ENV $VIRTUAL_ENV
 COPY . .

@@ -30,6 +30,7 @@ services:
       - redis
   run:
     build: .
+    shm_size: '8gb'
     depends_on:
       - rank-counter
       - sweep
