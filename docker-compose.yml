@@ -37,6 +37,7 @@ services:
     environment:
       - GRAPHQL_ENDPOINT
       - HOST_MACHINE
+      - OMP_NUM_THREADS=1
     entrypoint:
       - execute-sweep
       - --graphql-endpoint=${GRAPHQL_ENDPOINT}

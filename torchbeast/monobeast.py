@@ -22,19 +22,13 @@ import timeit
 import traceback
 import typing
 
-os.environ["OMP_NUM_THREADS"] = "1"  # Necessary for multithreading.
-
 import torch
 from torch import multiprocessing as mp
 from torch import nn
 from torch.nn import functional as F
 
 from torchbeast import atari_wrappers
-from torchbeast.core import environment
-from torchbeast.core import file_writer
-from torchbeast.core import prof
-from torchbeast.core import vtrace
-
+from torchbeast.core import environment, file_writer, prof, vtrace
 
 # yapf: disable
 parser = argparse.ArgumentParser(description="PyTorch Scalable Agent")
@@ -678,6 +672,7 @@ class Trainer:
 
     @classmethod
     def main(cls, flags):
+        assert os.getenv("OMP_NUM_THREADS") == "1"  # Necessary for multithreading.
         if flags.mode == "train":
             cls.train(flags)
         else:
