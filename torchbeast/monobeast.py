@@ -22,6 +22,8 @@ import timeit
 import traceback
 import typing
 
+from sweep_logger import initialize, HasuraLogger
+
 os.environ["OMP_NUM_THREADS"] = "1"  # Necessary for multithreading.
 
 import torch
@@ -91,6 +93,13 @@ parser.add_argument("--epsilon", default=0.01, type=float,
                     help="RMSProp epsilon.")
 parser.add_argument("--grad_norm_clipping", default=40.0, type=float,
                     help="Global gradient norm clip.")
+
+# logger
+parser.add_argument("--graphql_endpoint", default=os.getenv("GRAPHQL_ENDPOINT"), type=str)
+parser.add_argument("--config", default=None, type=str)
+parser.add_argument("--sweep_id", default=None, type=int)
+parser.add_argument("--load_id", default=None, type=int)
+parser.add_argument("--use_logger", action="store_true")
 # yapf: enable
 
 
@@ -316,7 +325,9 @@ def create_buffers(flags, obs_shape, num_actions) -> Buffers:
     return buffers
 
 
-def train(flags):  # pylint: disable=too-many-branches, too-many-statements
+def train(
+    flags, logger: HasuraLogger
+):  # pylint: disable=too-many-branches, too-many-statements
     if flags.xpid is None:
         flags.xpid = "torchbeast-%s" % time.strftime("%Y%m%d-%H%M%S")
     plogger = file_writer.FileWriter(
@@ -397,7 +408,6 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-    logger = logging.getLogger("logfile")
     stat_keys = [
         "total_loss",
         "mean_episode_return",
@@ -405,7 +415,6 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
         "baseline_loss",
         "entropy_loss",
     ]
-    logger.info("# Step\t%s", "\t".join(stat_keys))
 
     step, stats = 0, {}
 
@@ -489,6 +498,9 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
                 mean_return,
                 pprint.pformat(stats),
             )
+            if logger is not None:
+                logger.log(dict(run_id=logger.run_id, step=step, **stats))
+
     except KeyboardInterrupt:
         return  # Try joining actors then quit.
     else:
@@ -505,7 +517,7 @@ def train(flags):  # pylint: disable=too-many-branches, too-many-statements
     plogger.close()
 
 
-def test(flags, num_episodes: int = 10):
+def test(flags, logger: HasuraLogger, num_episodes: int = 10):
     if flags.xpid is None:
         checkpointpath = "./latest/model.tar"
     else:
@@ -647,10 +659,23 @@ def create_env(flags):
 
 
 def main(flags):
+    params, logger = initialize(
+        graphql_endpoint=flags.graphql_endpoint,
+        config=flags.config,
+        sweep_id=flags.sweep_id,
+        load_id=flags.load_id,
+        use_logger=flags.use_logger,
+    )
+    for k, v in params.items():
+        if hasattr(flags, k):
+            setattr(flags, k, v)
+        else:
+            raise RuntimeError(f"No such arg: {k}")
+
     if flags.mode == "train":
-        train(flags)
+        train(flags, logger)
     else:
-        test(flags)
+        test(flags, logger)
 
 
 if __name__ == "__main__":

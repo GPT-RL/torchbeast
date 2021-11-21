@@ -8,7 +8,7 @@ authors = ["Ethan Brooks", "Logan Walls <2934282+LoganWalls@users.noreply.github
 python = "^3.8"
 typed-argument-parser = "^1.7.0"
 transformers = "^4.11.3"
-sweep-logger = {git = "https://github.com/ethanabrooks/sweep-logger.git", rev = "main"}
+sweep-logger = {git = "https://github.com/run-tracker/sweep-logger.git", rev = "main"}
 gym = {version = "^0.18.3", extras = ["atari"]}
 torch = [
     {platform = 'darwin', url = "https://download.pytorch.org/whl/cpu/torch-1.10.0-cp38-none-macosx_10_9_x86_64.whl"},
