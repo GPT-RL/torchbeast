@@ -391,7 +391,6 @@ class Trainer:
 
             episode_returns = batch["episode_return"][batch["done"]]
             stats = {
-                "episode_returns": tuple(episode_returns.cpu().numpy()),
                 "mean_episode_return": torch.mean(episode_returns).item(),
                 "total_loss": total_loss.item(),
                 "pg_loss": pg_loss.item(),
