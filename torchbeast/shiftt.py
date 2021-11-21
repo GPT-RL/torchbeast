@@ -4,7 +4,6 @@ import torch
 from gym import spaces
 from torch import nn
 
-import torchbeast.net
 from torchbeast import atari_wrappers, monobeast
 from torchbeast.core import environment
 from torchbeast.core.environment import _format_frame
@@ -73,7 +72,7 @@ class Environment(environment.Environment):
         )
 
 
-class Network(torchbeast.net.AtariNet):
+class Network(monobeast.AtariNet):
     def __init__(
         self, observation_space: ObservationSpace, num_actions: int, use_lstm: bool
     ):
