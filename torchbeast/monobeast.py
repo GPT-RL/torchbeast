@@ -432,8 +432,8 @@ class Trainer:
             gym_env.observation_space.shape, gym_env.action_space.n, flags.use_lstm
         )
 
-    @classmethod
-    def wrap_env(cls, gym_env):
+    @staticmethod
+    def wrap_env(gym_env):
         return environment.Environment(gym_env)
 
     @classmethod
