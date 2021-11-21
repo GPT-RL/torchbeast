@@ -1,9 +1,13 @@
 import json
+import os
+import sys
+import warnings
 from collections import OrderedDict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Generator, NamedTuple, cast
+from typing import Generator, NamedTuple, Union, cast
 
 import PIL.Image
 import gym
@@ -16,6 +20,8 @@ import torch
 from pybullet_utils import bullet_client
 from torch.nn.utils.rnn import pad_sequence
 from transformers import GPT2Tokenizer
+
+from torchbeast.util import LazyFrames
 
 PROJECTION_MATRIX = p.computeProjectionMatrixFOV(
     fov=50, aspect=1, nearVal=0.01, farVal=10
@@ -32,7 +38,7 @@ class ObservationSpace(NamedTuple):
 
 class Observation(NamedTuple):
     mission: np.ndarray
-    image: np.ndarray
+    image: Union[np.ndarray, LazyFrames]
 
 
 class Action(NamedTuple):
@@ -61,22 +67,43 @@ class URDF(NamedTuple):
     z: float
 
 
+@contextmanager
+def suppress_stdout():
+    """from https://stackoverflow.com/a/17954769/4176597"""
+    fd = sys.stdout.fileno()
+
+    def _redirect_stdout(to):
+        sys.stdout.close()  # + implicit flush()
+        os.dup2(to.fileno(), fd)  # fd writes to 'to' file
+        sys.stdout = os.fdopen(fd, "w")  # Python writes to fd
+
+    with os.fdopen(os.dup(fd), "w") as old_stdout:
+        with open(os.devnull, "w") as file:
+            _redirect_stdout(to=file)
+        try:
+            yield  # allow code to be run with the redirected stdout
+        finally:
+            _redirect_stdout(to=old_stdout)  # restore stdout.
+            # buffering and flags such as
+            # CLOEXEC may be different
+
+
 @dataclass
 class PointMassEnv(gym.Env):
     metadata = {"render.modes": ["human", "rgb_array"], "video.frames_per_second": 60}
-    sparse_rew_thresh: float
-    mission_nvec: np.ndarray
-    tokenizer: GPT2Tokenizer
-    image_width: float = 96
-    image_height: float = 72
-    env_bounds: float = 5
     cameraYaw: float = 35
+    env_bounds: float = 5
+    image_height: float = 72
+    image_width: float = 96
+    is_render: bool = False
+    max_episode_steps = 200
+    model_name: str = "gpt2"
+    reindex_tokens: bool = False
 
     def __post_init__(
         self,
     ):
-
-        self._max_episode_steps = 500
+        tokenizer = GPT2Tokenizer.from_pretrained(self.model_name)
         self.action_space = spaces.Discrete(5)
         with Path("model_ids.json").open() as f:
             self.model_ids = set(json.load(f))
@@ -99,43 +126,72 @@ class PointMassEnv(gym.Env):
 
         def tokens() -> Generator[torch.Tensor, None, None]:
             for k in names:
-                encoded = self.tokenizer.encode(k, return_tensors="pt")
+                encoded = tokenizer.encode(k, return_tensors="pt")
                 tensor = cast(torch.Tensor, encoded)
                 yield tensor.squeeze(0)
 
         padded = pad_sequence(
             list(tokens()),
-            padding_value=self.tokenizer.eos_token_id,
-        ).T
+            padding_value=tokenizer.eos_token_id,
+        ).T.numpy()
+        if self.reindex_tokens:
+            _, indices = np.unique(padded, return_inverse=True)
+            _padded = indices.reshape(padded.shape)
 
         self.tokens = OrderedDict(zip(names, padded))
 
+        image_space = spaces.Box(
+            low=0,
+            high=255,
+            shape=[self.image_height, self.image_width, 3],
+        )
+        max_padded = padded.max()
+        nvec = np.ones_like(padded[0]) * (max_padded + 1)
+        mission_space = spaces.MultiDiscrete(nvec)
         self.observation_space = spaces.Tuple(
             ObservationSpace(
-                mission=spaces.MultiDiscrete(
-                    np.ones_like(self.mission_nvec[0]) * padded.max().item()
-                ),
-                image=spaces.Box(
-                    low=0,
-                    high=255,
-                    shape=[self.image_width, self.image_height, 3],
-                ),
+                mission=mission_space,
+                image=image_space,
             )
         )
 
-        self.is_render = False
-        self.gui_active = False
-        self._p = p
-        self.physics_client_active = 0
         self._seed()
         self.iterator = None
 
         self.relativeChildPosition = [0, 0, 0]
         self.relativeChildOrientation = [0, 0, 0, 1]
 
+        if self.is_render:
+            self._p = bullet_client.BulletClient(connection_mode=p.GUI)
+            self._p.configureDebugVisualizer(self._p.COV_ENABLE_SHADOWS, 0)
+        else:
+            self._p = bullet_client.BulletClient(connection_mode=p.DIRECT)
+
+        sphereRadius = 0.2
+        mass = 1
+        visualShapeId = 2
+        colSphereId = self._p.createCollisionShape(
+            self._p.GEOM_SPHERE, radius=sphereRadius
+        )
+        self.mass = self._p.createMultiBody(
+            mass, colSphereId, visualShapeId, [0, 0, 0.4]
+        )
+
+        self.mass_cid = self._p.createConstraint(
+            self.mass,
+            -1,
+            -1,
+            -1,
+            self._p.JOINT_FIXED,
+            [0, 0, 0],
+            [0, 0, 0],
+            self.relativeChildPosition,
+            self.relativeChildOrientation,
+        )
+
     def get_observation(self) -> Observation:
-        pos, _ = p.getBasePositionAndOrientation(self.mass)
-        (_, _, rgbPixels, _, _,) = p.getCameraImage(
+        pos, _ = self._p.getBasePositionAndOrientation(self.mass)
+        (_, _, rgbaPixels, _, _,) = self._p.getCameraImage(
             self.image_width,
             self.image_height,
             viewMatrix=self._p.computeViewMatrixFromYawPitchRoll(
@@ -148,38 +204,16 @@ class PointMassEnv(gym.Env):
             ),
             projectionMatrix=PROJECTION_MATRIX,
             shadow=0,
-            flags=p.ER_NO_SEGMENTATION_MASK,
-            renderer=p.ER_BULLET_HARDWARE_OPENGL,
+            flags=self._p.ER_NO_SEGMENTATION_MASK,
+            renderer=self._p.ER_BULLET_HARDWARE_OPENGL,
         )
-
-        return Observation(
-            image=rgbPixels.astype(np.float32),
+        rgbaPixels = rgbaPixels[..., :-1].astype(np.float32)
+        obs = Observation(
+            image=rgbaPixels,
             mission=self.tokens[self.mission],
         )
-
-    def compute_reward_sparse(self, achieved_goal, desired_goal):
-
-        initially_vectorized = True
-        dimension = 2
-        if len(achieved_goal.shape) == 1:
-            achieved_goal = np.expand_dims(np.array(achieved_goal), axis=0)
-            desired_goal = np.expand_dims(np.array(desired_goal), axis=0)
-            initially_vectorized = False
-
-        reward = np.zeros(len(achieved_goal))
-        for g in range(0, len(achieved_goal[0]) // dimension):  # piecewise reward
-            g = g * dimension  # increments of 2
-            current_distance = np.linalg.norm(
-                achieved_goal[:, g : g + dimension]
-                - desired_goal[:, g : g + dimension],
-                axis=1,
-            )
-            reward += np.where(current_distance > self.sparse_rew_thresh, -1, 0)
-
-        if not initially_vectorized:
-            return reward[0]
-        else:
-            return reward
+        assert self.observation_space.contains(obs)
+        return obs
 
     def generator(self):
         missions = []
@@ -201,11 +235,12 @@ class PointMassEnv(gym.Env):
             base_position[-1] = urdf.z
 
             try:
-                goal = self._p.loadURDF(
-                    str(urdf.path), basePosition=base_position, useFixedBase=True
-                )
-            except p.error:
-                print(p.error)
+                with suppress_stdout():
+                    goal = self._p.loadURDF(
+                        str(urdf.path), basePosition=base_position, useFixedBase=True
+                    )
+            except self._p.error:
+                print(self._p.error)
                 raise RuntimeError(f"Error while loading {urdf.path}")
             goals.append(goal)
 
@@ -230,26 +265,26 @@ class PointMassEnv(gym.Env):
         self.mission = missions[choice]
         i = dict(mission=self.mission, goals=goals)
 
-        self._p.configureDebugVisualizer(p.COV_ENABLE_GUI, False)
+        self._p.configureDebugVisualizer(self._p.COV_ENABLE_GUI, False)
 
         self._p.setGravity(0, 0, -10)
         halfExtents = [1.5 * self.env_bounds, 1.5 * self.env_bounds, 0.1]
         floor_collision = self._p.createCollisionShape(
-            p.GEOM_BOX, halfExtents=halfExtents
+            self._p.GEOM_BOX, halfExtents=halfExtents
         )
         floor_visual = self._p.createVisualShape(
-            p.GEOM_BOX, halfExtents=halfExtents, rgbaColor=[1, 1, 1, 0.5]
+            self._p.GEOM_BOX, halfExtents=halfExtents, rgbaColor=[1, 1, 1, 0.5]
         )
         self._p.createMultiBody(0, floor_collision, floor_visual, [0, 0, -0.2])
 
         self._p.resetBasePositionAndOrientation(self.mass, [0, 0, 0.6], [0, 0, 0, 1])
         action = yield self.get_observation()
 
-        for global_step in range(self._max_episode_steps):
+        for global_step in range(self.max_episode_steps):
             a = ACTIONS[action].value
 
             cameraYaw += a.turn
-            x, y, _, _ = p.getQuaternionFromEuler(
+            x, y, _, _ = self._p.getQuaternionFromEuler(
                 [np.pi, 0, np.deg2rad(2 * cameraYaw) + np.pi]
             )
             x_shift = a.forward * x
@@ -267,7 +302,10 @@ class PointMassEnv(gym.Env):
             t = ACTIONS[action].value.done
             if t:
                 (*goal_poss, pos), _ = zip(
-                    *[p.getBasePositionAndOrientation(g) for g in (*goals, self.mass)]
+                    *[
+                        self._p.getBasePositionAndOrientation(g)
+                        for g in (*goals, self.mass)
+                    ]
                 )
                 dists = [np.linalg.norm(np.array(pos) - np.array(g)) for g in goal_poss]
                 r = float(np.argmin(dists) == choice)
@@ -288,38 +326,6 @@ class PointMassEnv(gym.Env):
         return s, r, t, i
 
     def reset(self):
-        if not self.physics_client_active:
-            if self.is_render:
-                self._p = bullet_client.BulletClient(connection_mode=p.GUI)
-                self._p.configureDebugVisualizer(self._p.COV_ENABLE_SHADOWS, 0)
-                self.gui_active = True
-            else:
-                self._p = bullet_client.BulletClient(connection_mode=p.DIRECT)
-
-            self.physics_client_active = 1
-
-            sphereRadius = 0.2
-            mass = 1
-            visualShapeId = 2
-            colSphereId = self._p.createCollisionShape(
-                p.GEOM_SPHERE, radius=sphereRadius
-            )
-            self.mass = self._p.createMultiBody(
-                mass, colSphereId, visualShapeId, [0, 0, 0.4]
-            )
-
-            self.mass_cid = self._p.createConstraint(
-                self.mass,
-                -1,
-                -1,
-                -1,
-                self._p.JOINT_FIXED,
-                [0, 0, 0],
-                [0, 0, 0],
-                self.relativeChildPosition,
-                self.relativeChildOrientation,
-            )
-
         self.iterator = self.generator()
         return next(self.iterator)
 
@@ -342,13 +348,8 @@ class PointMassEnv(gym.Env):
 
 
 def main():
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
     env = PointMassEnv(
-        sparse_rew_thresh=0.3,
-        mission_nvec=np.array([400] * 8),
-        image_width=200,
-        image_height=200,
-        tokenizer=tokenizer,
+        image_width=200, image_height=200, is_render=True, reindex_tokens=True
     )
     env.render(mode="human")
     t = True
