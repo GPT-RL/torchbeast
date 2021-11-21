@@ -31,6 +31,8 @@ import gym
 import numpy as np
 from gym import spaces
 
+from torchbeast.lazy_frames import LazyFrames
+
 cv2.ocl.setUseOpenCL(False)
 
 
@@ -231,13 +233,18 @@ class FrameStack(gym.Wrapper):
         gym.Wrapper.__init__(self, env)
         self.k = k
         self.frames = deque([], maxlen=k)
-        shp = env.observation_space.shape
+        observation_space = self.get_observation_space(env)
+        shp = observation_space.shape
         self.observation_space = spaces.Box(
             low=0,
             high=255,
             shape=(shp[:-1] + (shp[-1] * k,)),
-            dtype=env.observation_space.dtype,
+            dtype=observation_space.dtype,
         )
+
+    @staticmethod
+    def get_observation_space(env):
+        return env.observation_space
 
     def reset(self):
         ob = self.env.reset()
@@ -266,44 +273,6 @@ class ScaledFloatFrame(gym.ObservationWrapper):
         # careful! This undoes the memory optimization, use
         # with smaller replay buffers only.
         return np.array(observation).astype(np.float32) / 255.0
-
-
-class LazyFrames(object):
-    def __init__(self, frames):
-        """This object ensures that common frames between the observations are only stored once.
-        It exists purely to optimize memory usage which can be huge for DQN's 1M frames replay
-        buffers.
-
-        This object should only be converted to numpy array before being passed to the model.
-
-        You'd not believe how complex the previous solution was."""
-        self._frames = frames
-        self._out = None
-
-    def _force(self):
-        if self._out is None:
-            self._out = np.concatenate(self._frames, axis=-1)
-            self._frames = None
-        return self._out
-
-    def __array__(self, dtype=None):
-        out = self._force()
-        if dtype is not None:
-            out = out.astype(dtype)
-        return out
-
-    def __len__(self):
-        return len(self._force())
-
-    def __getitem__(self, i):
-        return self._force()[i]
-
-    def count(self):
-        frames = self._force()
-        return frames.shape[frames.ndim - 1]
-
-    def frame(self, i):
-        return self._force()[..., i]
 
 
 def make_atari(env_id, max_episode_steps=None):
@@ -342,7 +311,8 @@ class ImageToPyTorch(gym.ObservationWrapper):
 
     def __init__(self, env):
         super(ImageToPyTorch, self).__init__(env)
-        old_shape = self.observation_space.shape
+        obs_space = self.observation_space
+        old_shape = obs_space.shape
         self.observation_space = gym.spaces.Box(
             low=0,
             high=255,

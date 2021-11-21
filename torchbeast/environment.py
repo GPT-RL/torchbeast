@@ -20,7 +20,7 @@ from pybullet_utils import bullet_client
 from torch.nn.utils.rnn import pad_sequence
 from transformers import GPT2Tokenizer
 
-from torchbeast.atari_wrappers import LazyFrames
+from torchbeast.lazy_frames import LazyFrames
 
 PROJECTION_MATRIX = p.computeProjectionMatrixFOV(
     fov=50, aspect=1, nearVal=0.01, farVal=10
