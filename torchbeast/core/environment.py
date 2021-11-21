@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """The environment class for MonoBeast."""
-
+import numpy as np
 import torch
 
 
@@ -28,13 +28,16 @@ class Environment:
         self.episode_step = None
 
     def initial(self):
+        return self._initial(self.gym_env.reset())
+
+    def _initial(self, obs):
         initial_reward = torch.zeros(1, 1)
         # This supports only single-tensor actions ATM.
         initial_last_action = torch.zeros(1, 1, dtype=torch.int64)
         self.episode_return = torch.zeros(1, 1)
         self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
         initial_done = torch.ones(1, 1, dtype=torch.uint8)
-        initial_frame = _format_frame(self.gym_env.reset())
+        initial_frame = _format_frame(obs)
         return dict(
             frame=initial_frame,
             reward=initial_reward,
@@ -46,6 +49,9 @@ class Environment:
 
     def step(self, action):
         frame, reward, done, unused_info = self.gym_env.step(action.item())
+        return self._step(frame, action, reward, done)
+
+    def _step(self, frame, action, reward, done):
         self.episode_step += 1
         self.episode_return += reward
         episode_step = self.episode_step
@@ -54,11 +60,9 @@ class Environment:
             frame = self.gym_env.reset()
             self.episode_return = torch.zeros(1, 1)
             self.episode_step = torch.zeros(1, 1, dtype=torch.int32)
-
         frame = _format_frame(frame)
         reward = torch.tensor(reward).view(1, 1)
         done = torch.tensor(done).view(1, 1)
-
         return dict(
             frame=frame,
             reward=reward,

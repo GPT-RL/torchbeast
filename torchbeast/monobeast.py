@@ -248,7 +248,7 @@ class Trainer:
             gym_env = cls.create_env(flags)
             seed = actor_index ^ int.from_bytes(os.urandom(4), byteorder="little")
             gym_env.seed(seed)
-            env = environment.Environment(gym_env)
+            env = cls.wrap_env(gym_env)
             env_output = env.initial()
             agent_state = model.initial_state(batch_size=1)
             agent_output, unused_state = model(env_output, agent_state)
@@ -332,8 +332,9 @@ class Trainer:
         timings.time("device")
         return batch, initial_agent_state
 
-    @staticmethod
+    @classmethod
     def learn(
+        cls,
         flags,
         actor_model,
         model,
@@ -407,10 +408,20 @@ class Trainer:
             actor_model.load_state_dict(model.state_dict())
             return stats
 
-    @staticmethod
-    def create_buffers(flags, obs_shape, num_actions) -> Buffers:
+    @classmethod
+    def create_buffers(cls, flags, obs_space, num_actions) -> Buffers:
         T = flags.unroll_length
-        specs = dict(
+        specs = cls.buffer_specs(obs_space, num_actions, T)
+        buffers: Buffers = {key: [] for key in specs}
+        for _ in range(flags.num_buffers):
+            for key in buffers:
+                buffers[key].append(torch.empty(**specs[key]).share_memory_())
+        return buffers
+
+    @classmethod
+    def buffer_specs(cls, obs_space, num_actions, T):
+        obs_shape = obs_space.shape
+        return dict(
             frame=dict(size=(T + 1, *obs_shape), dtype=torch.uint8),
             reward=dict(size=(T + 1,), dtype=torch.float32),
             done=dict(size=(T + 1,), dtype=torch.bool),
@@ -421,11 +432,6 @@ class Trainer:
             last_action=dict(size=(T + 1,), dtype=torch.int64),
             action=dict(size=(T + 1,), dtype=torch.int64),
         )
-        buffers: Buffers = {key: [] for key in specs}
-        for _ in range(flags.num_buffers):
-            for key in buffers:
-                buffers[key].append(torch.empty(**specs[key]).share_memory_())
-        return buffers
 
     @classmethod
     def test(cls, flags, num_episodes: int = 10):
@@ -439,10 +445,8 @@ class Trainer:
             )
 
         gym_env = cls.create_env(flags)
-        env = environment.Environment(gym_env)
-        model = Net(
-            gym_env.observation_space.shape, gym_env.action_space.n, flags.use_lstm
-        )
+        env = cls.wrap_env(gym_env)
+        model = cls.build_net(flags, gym_env)
         model.eval()
         checkpoint = torch.load(checkpointpath, map_location="cpu")
         model.load_state_dict(checkpoint["model_state_dict"])
@@ -469,6 +473,16 @@ class Trainer:
             num_episodes,
             sum(returns) / len(returns),
         )
+
+    @classmethod
+    def build_net(cls, flags, gym_env):
+        return Net(
+            gym_env.observation_space.shape, gym_env.action_space.n, flags.use_lstm
+        )
+
+    @classmethod
+    def wrap_env(cls, gym_env):
+        return environment.Environment(gym_env)
 
     @classmethod
     def train(cls, flags):  # pylint: disable=too-many-branches, too-many-statements
@@ -501,10 +515,8 @@ class Trainer:
 
         env = cls.create_env(flags)
 
-        model = Net(env.observation_space.shape, env.action_space.n, flags.use_lstm)
-        buffers = cls.create_buffers(
-            flags, env.observation_space.shape, model.num_actions
-        )
+        model = cls.build_net(flags, env)
+        buffers = cls.create_buffers(flags, env.observation_space, model.num_actions)
 
         model.share_memory()
 
@@ -537,9 +549,7 @@ class Trainer:
             actor.start()
             actor_processes.append(actor)
 
-        learner_model = Net(
-            env.observation_space.shape, env.action_space.n, flags.use_lstm
-        ).to(device=flags.device)
+        learner_model = cls.build_net(flags, env).to(device=flags.device)
 
         optimizer = torch.optim.RMSprop(
             learner_model.parameters(),
@@ -566,7 +576,7 @@ class Trainer:
 
         step, stats = 0, {}
 
-        def batch_and_learn(i, lock=threading.Lock()):
+        def batch_and_learn(j, lock=threading.Lock()):
             """Thread target for the learning process."""
             nonlocal step, stats
             timings = prof.Timings()
@@ -596,7 +606,7 @@ class Trainer:
                     plogger.log(to_log)
                     step += T * B
 
-            if i == 0:
+            if j == 0:
                 logging.info("Batch and learn: %s", timings.summary())
 
         for m in range(flags.num_buffers):
