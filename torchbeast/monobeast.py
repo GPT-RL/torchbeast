@@ -48,17 +48,17 @@ parser.add_argument("--disable_checkpoint", action="store_true",
                     help="Disable saving checkpoint.")
 parser.add_argument("--savedir", default="~/logs/torchbeast",
                     help="Root dir where experiment data will be saved.")
-parser.add_argument("--num_actors", default=4, type=int, metavar="N",
+parser.add_argument("--num_actors", default=45, type=int, metavar="N",
                     help="Number of actors (default: 4).")
-parser.add_argument("--total_steps", default=100000, type=int, metavar="T",
+parser.add_argument("--total_steps", default=30_000_000, type=int, metavar="T",
                     help="Total environment steps to train for.")
-parser.add_argument("--batch_size", default=8, type=int, metavar="B",
+parser.add_argument("--batch_size", default=4, type=int, metavar="B",
                     help="Learner batch size.")
 parser.add_argument("--unroll_length", default=80, type=int, metavar="T",
                     help="The unroll length (time dimension).")
-parser.add_argument("--num_buffers", default=None, type=int,
+parser.add_argument("--num_buffers", default=60, type=int,
                     metavar="N", help="Number of shared-memory buffers.")
-parser.add_argument("--num_learner_threads", "--num_threads", default=2, type=int,
+parser.add_argument("--num_learner_threads", "--num_threads", default=4, type=int,
                     metavar="N", help="Number learner threads.")
 parser.add_argument("--disable_cuda", action="store_true",
                     help="Disable CUDA.")
@@ -66,7 +66,7 @@ parser.add_argument("--use_lstm", action="store_true",
                     help="Use LSTM in agent model.")
 
 # Loss settings.
-parser.add_argument("--entropy_cost", default=0.0006,
+parser.add_argument("--entropy_cost", default=0.01,
                     type=float, help="Entropy cost/multiplier.")
 parser.add_argument("--baseline_cost", default=0.5,
                     type=float, help="Baseline cost/multiplier.")
@@ -77,7 +77,7 @@ parser.add_argument("--reward_clipping", default="abs_one",
                     help="Reward clipping.")
 
 # Optimizer settings.
-parser.add_argument("--learning_rate", default=0.00048,
+parser.add_argument("--learning_rate", default=0.0004,
                     type=float, metavar="LR", help="Learning rate.")
 parser.add_argument("--alpha", default=0.99, type=float,
                     help="RMSProp smoothing constant.")
