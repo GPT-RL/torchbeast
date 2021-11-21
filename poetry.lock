@@ -40,7 +40,7 @@ testing = ["pytest", "pytest-flake8", "pytest-cov", "pytest-black (>=0.3.7)", "p
 
 [[package]]
 name = "black"
-version = "21.10b0"
+version = "21.11b1"
 description = "The uncompromising code formatter."
 category = "dev"
 optional = false
@@ -51,7 +51,7 @@ click = ">=7.1.2"
 mypy-extensions = ">=0.4.3"
 pathspec = ">=0.9.0,<1"
 platformdirs = ">=2"
-regex = ">=2020.1.8"
+regex = ">=2021.4.4"
 tomli = ">=0.2.6,<2.0.0"
 typing-extensions = [
     {version = ">=3.10.0.0", markers = "python_version < \"3.10\""},
@@ -148,6 +148,19 @@ docs = ["furo (>=2021.8.17b43)", "sphinx (>=4.1)", "sphinx-autodoc-typehints (>=
 testing = ["covdefaults (>=1.2.0)", "coverage (>=4)", "pytest (>=4)", "pytest-cov", "pytest-timeout (>=1.4.2)"]
 
 [[package]]
+name = "flake8"
+version = "4.0.1"
+description = "the modular source code checker: pep8 pyflakes and co"
+category = "main"
+optional = false
+python-versions = ">=3.6"
+
+[package.dependencies]
+mccabe = ">=0.6.0,<0.7.0"
+pycodestyle = ">=2.8.0,<2.9.0"
+pyflakes = ">=2.4.0,<2.5.0"
+
+[[package]]
 name = "gql"
 version = "2.0.0"
 description = "GraphQL client for Python"
@@ -233,14 +246,14 @@ torch = ["torch"]
 
 [[package]]
 name = "identify"
-version = "2.3.6"
+version = "2.4.0"
 description = "File identification library for Python"
 category = "dev"
 optional = false
 python-versions = ">=3.6.1"
 
 [package.extras]
-license = ["editdistance-s"]
+license = ["ukkonen"]
 
 [[package]]
 name = "idna"
@@ -296,8 +309,22 @@ qtconsole = ["qtconsole"]
 test = ["nose (>=0.10.1)", "requests", "testpath", "pygments", "nbformat", "ipykernel", "numpy (>=1.17)"]
 
 [[package]]
+name = "isort"
+version = "5.10.1"
+description = "A Python utility / library to sort Python imports."
+category = "dev"
+optional = false
+python-versions = ">=3.6.1,<4.0"
+
+[package.extras]
+pipfile_deprecated_finder = ["pipreqs", "requirementslib"]
+requirements_deprecated_finder = ["pipreqs", "pip-api"]
+colors = ["colorama (>=0.4.3,<0.5.0)"]
+plugins = ["setuptools"]
+
+[[package]]
 name = "jedi"
-version = "0.18.0"
+version = "0.18.1"
 description = "An autocompletion tool for Python that can be used for text editors."
 category = "dev"
 optional = false
@@ -308,7 +335,7 @@ parso = ">=0.8.0,<0.9.0"
 
 [package.extras]
 qa = ["flake8 (==3.8.3)", "mypy (==0.782)"]
-testing = ["Django (<3.1)", "colorama", "docopt", "pytest (<6.0.0)"]
+testing = ["Django (<3.1)", "colorama", "docopt", "pytest (<7.0.0)"]
 
 [[package]]
 name = "joblib"
@@ -336,6 +363,14 @@ python-versions = ">=3.5"
 
 [package.dependencies]
 traitlets = "*"
+
+[[package]]
+name = "mccabe"
+version = "0.6.1"
+description = "McCabe checker, plugin for flake8"
+category = "main"
+optional = false
+python-versions = "*"
 
 [[package]]
 name = "mypy-extensions"
@@ -374,14 +409,14 @@ numpy = ">=1.21.0"
 
 [[package]]
 name = "packaging"
-version = "21.2"
+version = "21.3"
 description = "Core utilities for Python packages"
 category = "main"
 optional = false
 python-versions = ">=3.6"
 
 [package.dependencies]
-pyparsing = ">=2.0.2,<3"
+pyparsing = ">=2.0.2,<3.0.5 || >3.0.5"
 
 [[package]]
 name = "parso"
@@ -500,6 +535,22 @@ optional = false
 python-versions = "*"
 
 [[package]]
+name = "pycodestyle"
+version = "2.8.0"
+description = "Python style guide checker"
+category = "main"
+optional = false
+python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
+
+[[package]]
+name = "pyflakes"
+version = "2.4.0"
+description = "passive checker of Python programs"
+category = "main"
+optional = false
+python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
+
+[[package]]
 name = "pyglet"
 version = "1.5.15"
 description = "Cross-platform windowing and multimedia library"
@@ -517,11 +568,14 @@ python-versions = ">=3.5"
 
 [[package]]
 name = "pyparsing"
-version = "2.4.7"
+version = "3.0.6"
 description = "Python parsing module"
 category = "main"
 optional = false
-python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*"
+python-versions = ">=3.6"
+
+[package.extras]
+diagrams = ["jinja2", "railroad-diagrams"]
 
 [[package]]
 name = "pyyaml"
@@ -739,7 +793,7 @@ test = ["pytest"]
 
 [[package]]
 name = "transformers"
-version = "4.12.3"
+version = "4.12.5"
 description = "State-of-the-art Natural Language Processing for TensorFlow 2.0 and PyTorch"
 category = "main"
 optional = false
@@ -869,7 +923,7 @@ python-versions = "*"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "3027d220575189087eaa7f46b08cf50176cb85b4a88311f8d50d296c84e4335c"
+content-hash = "e88f5c03ad33a8716034f3cec4f75c86ceaed2ab4a5fb135f00c8be7ddf866d6"
 
 [metadata.files]
 appnope = [
@@ -904,8 +958,8 @@ backcall = [
     {file = "backports.entry_points_selectable-1.1.1.tar.gz", hash = "sha256:914b21a479fde881635f7af5adc7f6e38d6b274be32269070c53b698c60d5386"},
 ]
 black = [
-    {file = "black-21.10b0-py3-none-any.whl", hash = "sha256:6eb7448da9143ee65b856a5f3676b7dda98ad9abe0f87fce8c59291f15e82a5b"},
-    {file = "black-21.10b0.tar.gz", hash = "sha256:a9952229092e325fe5f3dae56d81f639b23f7131eb840781947e4b2886030f33"},
+    {file = "black-21.11b1-py3-none-any.whl", hash = "sha256:802c6c30b637b28645b7fde282ed2569c0cd777dbe493a41b6a03c1d903f99ac"},
+    {file = "black-21.11b1.tar.gz", hash = "sha256:a042adbb18b3262faad5aff4e834ff186bb893f95ba3a8013f09de1e5569def2"},
 ]
 certifi = [
     {file = "certifi-2021.10.8-py2.py3-none-any.whl", hash = "sha256:d62a0163eb4c2344ac042ab2bdf75399a71a2d8c7d47eac2e2ee91b9d6339569"},
@@ -943,6 +997,10 @@ filelock = [
     {file = "filelock-3.4.0-py3-none-any.whl", hash = "sha256:2e139a228bcf56dd8b2274a65174d005c4a6b68540ee0bdbb92c76f43f29f7e8"},
     {file = "filelock-3.4.0.tar.gz", hash = "sha256:93d512b32a23baf4cac44ffd72ccf70732aeff7b8050fcaf6d3ec406d954baf4"},
 ]
+flake8 = [
+    {file = "flake8-4.0.1-py2.py3-none-any.whl", hash = "sha256:479b1304f72536a55948cb40a32dce8bb0ffe3501e26eaf292c7e60eb5e0428d"},
+    {file = "flake8-4.0.1.tar.gz", hash = "sha256:806e034dda44114815e23c16ef92f95c91e4c71100ff52813adf7132a6ad870d"},
+]
 gql = [
     {file = "gql-2.0.0-py2.py3-none-any.whl", hash = "sha256:35032ddd4bfe6b8f3169f806b022168932385d751eacc5c5f7122e0b3f4d6b88"},
     {file = "gql-2.0.0.tar.gz", hash = "sha256:fe8d3a08047f77362ddfcfddba7cae377da2dd66f5e61c59820419c9283d4fb5"},
@@ -959,8 +1017,8 @@ huggingface-hub = [
     {file = "huggingface_hub-0.1.2.tar.gz", hash = "sha256:d45c0174b6d638fd1101a34d7ed624197b5168d95d7b8dd219f177571840f249"},
 ]
 identify = [
-    {file = "identify-2.3.6-py2.py3-none-any.whl", hash = "sha256:8cb609a671d2f861ae7fe583711a43fd2faab0c892f39cbc4568b0c51b354238"},
-    {file = "identify-2.3.6.tar.gz", hash = "sha256:4f85f9bd8e6e5e2d61b2f8de5ff5313d8a1cfac4c88822d74406de45ad10bd82"},
+    {file = "identify-2.4.0-py2.py3-none-any.whl", hash = "sha256:eba31ca80258de6bb51453084bff4a923187cd2193b9c13710f2516ab30732cc"},
+    {file = "identify-2.4.0.tar.gz", hash = "sha256:a33ae873287e81651c7800ca309dc1f84679b763c9c8b30680e16fbfa82f0107"},
 ]
 idna = [
     {file = "idna-3.3-py3-none-any.whl", hash = "sha256:84d9dd047ffa80596e0f246e2eab0b391788b0503584e8945f2368256d2735ff"},
@@ -973,9 +1031,13 @@ ipython = [
     {file = "ipython-7.29.0-py3-none-any.whl", hash = "sha256:a658beaf856ce46bc453366d5dc6b2ddc6c481efd3540cb28aa3943819caac9f"},
     {file = "ipython-7.29.0.tar.gz", hash = "sha256:4f69d7423a5a1972f6347ff233e38bbf4df6a150ef20fbb00c635442ac3060aa"},
 ]
+isort = [
+    {file = "isort-5.10.1-py3-none-any.whl", hash = "sha256:6f62d78e2f89b4500b080fe3a81690850cd254227f27f75c3a0c491a1f351ba7"},
+    {file = "isort-5.10.1.tar.gz", hash = "sha256:e8443a5e7a020e9d7f97f1d7d9cd17c88bcb3bc7e218bf9cf5095fe550be2951"},
+]
 jedi = [
-    {file = "jedi-0.18.0-py2.py3-none-any.whl", hash = "sha256:18456d83f65f400ab0c2d3319e48520420ef43b23a086fdc05dff34132f0fb93"},
-    {file = "jedi-0.18.0.tar.gz", hash = "sha256:92550a404bad8afed881a137ec9a461fed49eca661414be45059329614ed0707"},
+    {file = "jedi-0.18.1-py2.py3-none-any.whl", hash = "sha256:637c9635fcf47945ceb91cd7f320234a7be540ded6f3e99a50cb6febdfd1ba8d"},
+    {file = "jedi-0.18.1.tar.gz", hash = "sha256:74137626a64a99c8eb6ae5832d99b3bdd7d29a3850fe2aa80a4126b2a7d949ab"},
 ]
 joblib = [
     {file = "joblib-1.1.0-py2.py3-none-any.whl", hash = "sha256:f21f109b3c7ff9d95f8387f752d0d9c34a02aa2f7060c2135f465da0e5160ff6"},
@@ -988,6 +1050,10 @@ jsonlines = [
 matplotlib-inline = [
     {file = "matplotlib-inline-0.1.3.tar.gz", hash = "sha256:a04bfba22e0d1395479f866853ec1ee28eea1485c1d69a6faf00dc3e24ff34ee"},
     {file = "matplotlib_inline-0.1.3-py3-none-any.whl", hash = "sha256:aed605ba3b72462d64d475a21a9296f400a19c4f74a31b59103d2a99ffd5aa5c"},
+]
+mccabe = [
+    {file = "mccabe-0.6.1-py2.py3-none-any.whl", hash = "sha256:ab8a6258860da4b6677da4bd2fe5dc2c659cff31b3ee4f7f5d64e79735b80d42"},
+    {file = "mccabe-0.6.1.tar.gz", hash = "sha256:dd8d182285a0fe56bace7f45b5e7d1a6ebcbf524e8f3bd87eb0f125271b8831f"},
 ]
 mypy-extensions = [
     {file = "mypy_extensions-0.4.3-py2.py3-none-any.whl", hash = "sha256:090fedd75945a69ae91ce1303b5824f428daf5a028d2f6ab8a299250a846f15d"},
@@ -1054,8 +1120,8 @@ opencv-python = [
     {file = "opencv_python-4.5.3.56-cp39-cp39-win_amd64.whl", hash = "sha256:205a73adb29c37e42475645519e612e843a985475da993d10b4d5daa6afec36a"},
 ]
 packaging = [
-    {file = "packaging-21.2-py3-none-any.whl", hash = "sha256:14317396d1e8cdb122989b916fa2c7e9ca8e2be9e8060a6eff75b6b7b4d8a7e0"},
-    {file = "packaging-21.2.tar.gz", hash = "sha256:096d689d78ca690e4cd8a89568ba06d07ca097e3306a4381635073ca91479966"},
+    {file = "packaging-21.3-py3-none-any.whl", hash = "sha256:ef103e05f519cdc783ae24ea4e2e0f508a9c99b2d4969652eed6a2e1ea5bd522"},
+    {file = "packaging-21.3.tar.gz", hash = "sha256:dd47c42927d89ab911e606518907cc2d3a1f38bbd026385970643f9c5b8ecfeb"},
 ]
 parso = [
     {file = "parso-0.8.2-py2.py3-none-any.whl", hash = "sha256:a8c4922db71e4fdb90e0d0bc6e50f9b273d3397925e5e60a717e719201778d22"},
@@ -1138,6 +1204,14 @@ pybullet = [
     {file = "pybullet-3.2.0-cp39-cp39-manylinux1_x86_64.whl", hash = "sha256:2945e370e29328bcde6cb77b351920bb7942e8613dfbe65370d6ab0c2dfc82b3"},
     {file = "pybullet-3.2.0.tar.gz", hash = "sha256:df02fb0ab74a6e7c4e1d7a3e2ffd7e4760a30cdeccb9fa6dd19f334122ec00f2"},
 ]
+pycodestyle = [
+    {file = "pycodestyle-2.8.0-py2.py3-none-any.whl", hash = "sha256:720f8b39dde8b293825e7ff02c475f3077124006db4f440dcbc9a20b76548a20"},
+    {file = "pycodestyle-2.8.0.tar.gz", hash = "sha256:eddd5847ef438ea1c7870ca7eb78a9d47ce0cdb4851a5523949f2601d0cbbe7f"},
+]
+pyflakes = [
+    {file = "pyflakes-2.4.0-py2.py3-none-any.whl", hash = "sha256:3bb3a3f256f4b7968c9c788781e4ff07dce46bdf12339dcda61053375426ee2e"},
+    {file = "pyflakes-2.4.0.tar.gz", hash = "sha256:05a85c2872edf37a4ed30b0cce2f6093e1d0581f8c19d7393122da7e25b2b24c"},
+]
 pyglet = [
     {file = "pyglet-1.5.15-py3-none-any.whl", hash = "sha256:4401cc176580e4e17e2df8bbf7536f27e691327dc3f38f209a12f1859c70aed2"},
     {file = "pyglet-1.5.15.zip", hash = "sha256:da9d8337388cedabf1f1c5dc21a45bb2b0e5327fba47f996c8573818c3dfa478"},
@@ -1147,8 +1221,8 @@ pygments = [
     {file = "Pygments-2.10.0.tar.gz", hash = "sha256:f398865f7eb6874156579fdf36bc840a03cab64d1cde9e93d68f46a425ec52c6"},
 ]
 pyparsing = [
-    {file = "pyparsing-2.4.7-py2.py3-none-any.whl", hash = "sha256:ef9d7589ef3c200abe66653d3f1ab1033c3c419ae9b9bdb1240a85b024efc88b"},
-    {file = "pyparsing-2.4.7.tar.gz", hash = "sha256:c203ec8783bf771a155b207279b9bccb8dea02d8f0c9e5f8ead507bc3246ecc1"},
+    {file = "pyparsing-3.0.6-py3-none-any.whl", hash = "sha256:04ff808a5b90911829c55c4e26f75fa5ca8a2f5f36aa3a51f68e27033341d3e4"},
+    {file = "pyparsing-3.0.6.tar.gz", hash = "sha256:d9bdec0013ef1eb5a84ab39a3b3868911598afa494f5faa038647101504e2b81"},
 ]
 pyyaml = [
     {file = "PyYAML-5.4.1-cp27-cp27m-macosx_10_9_x86_64.whl", hash = "sha256:3b2b1824fe7112845700f815ff6a489360226a5609b96ec2190a45e62a9fc922"},
@@ -1312,8 +1386,8 @@ traitlets = [
     {file = "traitlets-5.1.1.tar.gz", hash = "sha256:059f456c5a7c1c82b98c2e8c799f39c9b8128f6d0d46941ee118daace9eb70c7"},
 ]
 transformers = [
-    {file = "transformers-4.12.3-py3-none-any.whl", hash = "sha256:72af438227281db327afdad1d2674b1997d0abba1cfdca9204dcff84681ff652"},
-    {file = "transformers-4.12.3.tar.gz", hash = "sha256:6072b969299b5989f4b236787f47162b59da77d827bacf33086b06fe69e7de6e"},
+    {file = "transformers-4.12.5-py3-none-any.whl", hash = "sha256:7d948488faf88fbcc8dd2b287eaa377d140dc38168e0d887d7ef37dceed6a941"},
+    {file = "transformers-4.12.5.tar.gz", hash = "sha256:421e63eecd4dc1f2087f6e96d324fdeff938c8dfc9e0ac6ddceef8f2e764b982"},
 ]
 typed-argument-parser = [
     {file = "typed-argument-parser-1.7.1.tar.gz", hash = "sha256:b5f8c3e13e993d457218c7cb961588f3662efdd301681034b08a8f42c5e9d802"},
