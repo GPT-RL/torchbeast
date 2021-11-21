@@ -1,106 +1,82 @@
-# syntax=docker/dockerfile:experimental
-FROM ubuntu:18.04
+# inspired by https://sourcery.ai/blog/python-docker/
+FROM nvidia/cuda:11.3.1-cudnn8-devel-ubuntu20.04 as base
+ARG CUDA_SHORT=112
 
-SHELL ["/bin/bash", "-c"]
+# Setup locale
+ENV LANG C.UTF-8
+ENV LC_ALL C.UTF-8
 
-RUN apt-get update && apt-get install -y \
-    python3-setuptools \
-    python3-pip \
-    git \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    wget \
-    pkg-config
+# no .pyc files
+ENV PYTHONDONTWRITEBYTECODE 1
 
-WORKDIR /src
+# traceback on segfau8t
+ENV PYTHONFAULTHANDLER 1
 
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+# use ipdb for breakpoints
+ENV PYTHONBREAKPOINT=ipdb.set_trace
 
-RUN bash Miniconda3-latest-Linux-x86_64.sh -b
+# common dependencies
+RUN apt-get update -q \
+ && DEBIAN_FRONTEND="noninteractive" \
+    apt-get install -yq \
+      # primary interpreter
+      python3.9 \
 
-ENV PATH /root/miniconda3/bin:$PATH
+      # required by transformers package
+      python3.9-distutils \
 
-ENV CONDA_PREFIX /root/miniconda3/envs/torchbeast
+      # redis-python
+      redis \
 
-# Clear .bashrc (it refuses to run non-interactively otherwise).
-RUN echo > ~/.bashrc
+      # git-state
+      git \
 
-# Add conda logic to .bashrc.
-RUN conda init bash
+      # for Atari Roms and redis
+      wget \
 
-# Create new environment and install some dependencies.
-RUN conda create -y -n torchbeast python=3.7 \
-    protobuf \
-    numpy \
-    ninja \
-    pyyaml \
-    mkl \
-    mkl-include \
-    setuptools \
-    cmake \
-    cffi \
-    typing
+      # for opencv-python
+      libgl1-mesa-glx \
+      libglib2.0-0 \
 
-# Activate environment in .bashrc.
-RUN echo "conda activate torchbeast" >> /root/.bashrc
+ && apt-get clean
 
-# Make bash excecute .bashrc even when running non-interactively.
-ENV BASH_ENV /root/.bashrc
+FROM base AS python-deps
 
-# Install PyTorch.
+# build dependencies
+RUN apt-get update -q \
+ && DEBIAN_FRONTEND="noninteractive" \
+    apt-get install -yq \
 
-# Would like to install PyTorch via pip. Unfortunately, there's binary
-# incompatability issues (https://github.com/pytorch/pytorch/issues/18128).
-# Otherwise, this would work:
-# # # Install PyTorch. This needs increased Docker memory.
-# # # (https://github.com/pytorch/pytorch/issues/1022)
-# # RUN pip download torch
-# # RUN pip install torch*.whl
+      # required by poetry
+      python \
+      python3-pip \
 
-RUN git clone --single-branch --branch v1.2.0 --recursive https://github.com/pytorch/pytorch
+      # required for Arari Roms
+      unrar \
+      unzip \
 
-WORKDIR /src/pytorch
+ && apt-get clean
 
-ENV CMAKE_PREFIX_PATH ${CONDA_PREFIX}
+WORKDIR "/deps"
 
-RUN python setup.py install
+COPY pyproject.toml poetry.lock /deps/
 
-# Clone TorchBeast.
-WORKDIR /src/torchbeast
+RUN pip install poetry \
+ && poetry install
 
-COPY .git /src/torchbeast/.git
-
-RUN git reset --hard
-
-# Collect and install grpc.
-RUN git submodule update --init --recursive
-
-RUN ./scripts/install_grpc.sh
-
-# Install nest.
-RUN pip install nest/
-
-# Install PolyBeast's requirements.
-RUN pip install -r requirements.txt
-
-# Compile libtorchbeast.
-ENV LD_LIBRARY_PATH ${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}
-
-RUN python setup.py install
-
-ENV OMP_NUM_THREADS 1
-
-# Run.
-CMD ["bash", "-c", "python -m torchbeast.polybeast \
-       --num_actors 10 \
-       --total_steps 200000000 \
-       --unroll_length 60 --batch_size 32"]
+ENV VIRTUAL_ENV=/root/.cache/pypoetry/virtualenvs/torchbeast-K3BlsyQa-py3.8/
+RUN wget "http://www.atarimania.com/roms/Roms.rar" \
+ && unrar e Roms.rar \
+ && unzip ROMS.zip \
+ && $VIRTUAL_ENV/bin/python -m atari_py.import_roms ROMS/
 
 
-# Docker commands:
-#   docker rm torchbeast -v
-#   docker build -t torchbeast .
-#   docker run --name torchbeast torchbeast
-# or
-#   docker run --name torchbeast -it torchbeast /bin/bash
+FROM base AS runtime
+
+WORKDIR "/project"
+ENV VIRTUAL_ENV=/root/.cache/pypoetry/virtualenvs/torchbeast-K3BlsyQa-py3.8/
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+COPY --from=python-deps $VIRTUAL_ENV $VIRTUAL_ENV
+COPY . .
+
+ENTRYPOINT ["python"]
