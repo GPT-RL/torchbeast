@@ -9,7 +9,7 @@ from torchbeast.core import environment
 from torchbeast.core.environment import _format_frame
 from torchbeast.environment import Observation, ObservationSpace, PointMassEnv
 from torchbeast.lazy_frames import LazyFrames
-from torchbeast.monobeast import Flags
+from torchbeast.monobeast import Args
 
 
 class ImageToPyTorch(atari_wrappers.ImageToPyTorch):
@@ -142,7 +142,7 @@ class Trainer(monobeast.Trainer):
         return Environment(gym_env)
 
     @staticmethod
-    def create_env(flags):
+    def create_env(args: Args):
         env = PointMassEnv(reindex_tokens=True)
         env = ScaledFloatFrame(env)
         env = FrameStack(env, 4)
@@ -157,13 +157,13 @@ class Trainer(monobeast.Trainer):
         return dict(mission=dict(size=[T + 1, *nvec.shape], dtype=torch.int32), **specs)
 
     @classmethod
-    def build_net(cls, flags, gym_env):
+    def build_net(cls, args, gym_env):
         return Network(
             observation_space=ObservationSpace(*gym_env.observation_space.spaces),
             num_actions=gym_env.action_space.n,
-            use_lstm=flags.use_lstm,
+            use_lstm=args.use_lstm,
         )
 
 
 if __name__ == "__main__":
-    Trainer().main(Flags().parse_args())
+    Trainer().main(Args().parse_args())
