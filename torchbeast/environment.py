@@ -22,12 +22,10 @@ from transformers import GPT2Tokenizer
 
 from torchbeast.lazy_frames import LazyFrames
 
-PROJECTION_MATRIX = p.computeProjectionMatrixFOV(
-    fov=50, aspect=1, nearVal=0.01, farVal=10
-)
 
 CAMERA_DISTANCE = 3
 CAMERA_PITCH = -45
+CAMERA_YAW = 225
 
 
 class ObservationSpace(NamedTuple):
@@ -203,7 +201,6 @@ class PointMassEnv(gym.Env):
                 roll=0,
                 upAxisIndex=2,
             ),
-            projectionMatrix=PROJECTION_MATRIX,
             shadow=0,
             flags=self._p.ER_NO_SEGMENTATION_MASK,
             renderer=self._p.ER_BULLET_HARDWARE_OPENGL,
@@ -219,7 +216,6 @@ class PointMassEnv(gym.Env):
     def generator(self):
         missions = []
         goals = []
-        cameraYaw = 0
         urdfs = [
             self.urdfs[i]
             for i in self.np_random.choice(len(self.urdfs), size=2, replace=False)
@@ -227,8 +223,8 @@ class PointMassEnv(gym.Env):
 
         for base_position, urdf in zip(
             [
-                [self.env_bounds / 2, self.env_bounds / 2, 0],
-                [-self.env_bounds / 2, -self.env_bounds / 2, 0],
+                [self.env_bounds / 3, self.env_bounds / 3, 0],
+                [-self.env_bounds / 3, -self.env_bounds / 3, 0],
             ],
             urdfs,
         ):
@@ -284,9 +280,9 @@ class PointMassEnv(gym.Env):
         for global_step in range(self.max_episode_steps):
             a = ACTIONS[action].value
 
-            cameraYaw += a.turn
+            self.cameraYaw += a.turn
             x, y, _, _ = self._p.getQuaternionFromEuler(
-                [np.pi, 0, np.deg2rad(2 * cameraYaw) + np.pi]
+                [np.pi, 0, np.deg2rad(2 * self.cameraYaw) + np.pi]
             )
             x_shift = a.forward * x
             y_shift = a.forward * y
@@ -348,7 +344,9 @@ class PointMassEnv(gym.Env):
 
 def main():
     env = PointMassEnv(
-        image_width=200, image_height=200, is_render=True, reindex_tokens=True
+        is_render=True,
+        reindex_tokens=True,
+        max_episode_steps=10000000,
     )
     env.render(mode="human")
     t = True
@@ -370,7 +368,7 @@ def main():
     while True:
         try:
             if t:
-                cameraYaw = 0
+                cameraYaw = CAMERA_YAW
                 env.reset()
                 printed_mission = False
                 if r is not None:
