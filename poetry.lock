@@ -706,7 +706,7 @@ run-logger = {git = "https://github.com/ethanabrooks/run-logger.git", rev = "mai
 type = "git"
 url = "https://github.com/run-tracker/sweep-logger.git"
 reference = "main"
-resolved_reference = "db599f47dc7b222eef3fb2725dd174ede63661d3"
+resolved_reference = "78fa9f760ee4523ff77a73fc592e3ea9b7580201"
 
 [[package]]
 name = "tokenizers"

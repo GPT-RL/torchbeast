@@ -24,6 +24,7 @@ import typing
 
 import torch
 from sweep_logger import HasuraLogger, initialize
+from tap import Tap
 from torch import multiprocessing as mp
 from torch import nn
 from torch.nn import functional as F
@@ -32,69 +33,47 @@ from torchbeast import atari_wrappers
 from torchbeast.core import environment, file_writer, prof, vtrace
 from torchbeast.spec import spec
 
-# yapf: disable
-parser = argparse.ArgumentParser(description="PyTorch Scalable Agent")
 
-parser.add_argument("--env", type=str, default="PongNoFrameskip-v4",
-                    help="Gym environment.")
-parser.add_argument("--mode", default="train",
-                    choices=["train", "test", "test_render"],
-                    help="Training or test mode.")
-parser.add_argument("--xpid", default=None,
-                    help="Experiment id (default: None).")
+class Flags(Tap):
+    env: str = "PongNoFrameskip-v4"  # Gym environment.
+    mode: typing.Literal[
+        "train", "test", "test_render"
+    ] = "train"  # Training or test mode.
 
-# Training settings.
-parser.add_argument("--disable_checkpoint", action="store_true",
-                    help="Disable saving checkpoint.")
-parser.add_argument("--savedir", default="~/logs/torchbeast",
-                    help="Root dir where experiment data will be saved.")
-parser.add_argument("--num_actors", default=45, type=int, metavar="N",
-                    help="Number of actors (default: 4).")
-parser.add_argument("--total_steps", default=30_000_000, type=int, metavar="T",
-                    help="Total environment steps to train for.")
-parser.add_argument("--batch_size", default=4, type=int, metavar="B",
-                    help="Learner batch size.")
-parser.add_argument("--unroll_length", default=80, type=int, metavar="T",
-                    help="The unroll length (time dimension).")
-parser.add_argument("--num_buffers", default=60, type=int,
-                    metavar="N", help="Number of shared-memory buffers.")
-parser.add_argument("--num_learner_threads", "--num_threads", default=4, type=int,
-                    metavar="N", help="Number learner threads.")
-parser.add_argument("--disable_cuda", action="store_true",
-                    help="Disable CUDA.")
-parser.add_argument("--use_lstm", action="store_true",
-                    help="Use LSTM in agent model.")
+    # Training settings.
+    disable_checkpoint: bool = False  # Disable saving checkpoint.
+    savedir: str = "~/logs/torchbeast"  # Root dir where experiment data will be saved.
+    num_actors: int = 45  # Number of actors (default: 4).
+    total_steps: int = 30_000_000  # Total environment steps to train for.
+    batch_size: int = 4  # Learner batch size.
+    unroll_length: int = 80  # The unroll length (time dimension).
+    num_buffers: int = 60  # Number of shared-memory buffers.
+    num_threads: int = 4  # Number learner threads.
+    disable_cuda: bool = False  # help="Disable CUDA.
+    use_lstm: bool = False  # help="Use LSTM in agent model.
 
-# Loss settings.
-parser.add_argument("--entropy_cost", default=0.01,
-                    type=float, help="Entropy cost/multiplier.")
-parser.add_argument("--baseline_cost", default=0.5,
-                    type=float, help="Baseline cost/multiplier.")
-parser.add_argument("--discounting", default=0.99,
-                    type=float, help="Discounting factor.")
-parser.add_argument("--reward_clipping", default="abs_one",
-                    choices=["abs_one", "none"],
-                    help="Reward clipping.")
+    # Loss settings.
+    entropy_cost: float = 0.01  # Entropy cost/multiplier.
+    baseline_cost: float = 0.5  # Baseline cost/multiplier.
+    discounting: float = 0.99  # Discounting factor.
+    reward_clipping: typing.Literal["abs_one", "none"] = "abs_one"  # Reward clipping.
 
-# Optimizer settings.
-parser.add_argument("--learning_rate", default=0.0004,
-                    type=float, metavar="LR", help="Learning rate.")
-parser.add_argument("--alpha", default=0.99, type=float,
-                    help="RMSProp smoothing constant.")
-parser.add_argument("--momentum", default=0, type=float,
-                    help="RMSProp momentum.")
-parser.add_argument("--epsilon", default=0.01, type=float,
-                    help="RMSProp epsilon.")
-parser.add_argument("--grad_norm_clipping", default=40.0, type=float,
-                    help="Global gradient norm clip.")
+    # Optimizer settings.
+    learning_rate: float = 0.0004  # LR
+    alpha: float = 0.99  # RMSProp smoothing constant.
+    momentum: float = 0  # RMSProp momentum.
+    epsilon: float = 0.01  # RMSProp epsilon.
+    grad_norm_clipping: float = 40.0  # Global gradient norm clip.
 
-# logger
-parser.add_argument("--graphql_endpoint", default=os.getenv("GRAPHQL_ENDPOINT"), type=str)
-parser.add_argument("--config", default=None, type=str)
-parser.add_argument("--sweep_id", default=None, type=int)
-parser.add_argument("--load_id", default=None, type=int)
-parser.add_argument("--use_logger", action="store_true")
-parser.add_argument("--name")
+    # logger
+    graphql_endpoint: str = os.getenv("GRAPHQL_ENDPOINT")
+    config: str = None
+    sweep_id: int = None
+    load_id: int = None
+    use_logger: bool = False
+    name: str = None
+
+
 # yapf: enable
 
 
@@ -237,7 +216,7 @@ class Trainer:
     @classmethod
     def act(
         cls,
-        flags,
+        flags: Flags,
         actor_index: int,
         free_queue: mp.SimpleQueue,
         full_queue: mp.SimpleQueue,
@@ -303,7 +282,8 @@ class Trainer:
 
     @staticmethod
     def get_batch(
-        flags,
+        flags: Flags,
+        device: torch.device,
         free_queue: mp.SimpleQueue,
         full_queue: mp.SimpleQueue,
         buffers: Buffers,
@@ -327,11 +307,9 @@ class Trainer:
         for m in indices:
             free_queue.put(m)
         timings.time("enqueue")
-        batch = {
-            k: t.to(device=flags.device, non_blocking=True) for k, t in batch.items()
-        }
+        batch = {k: t.to(device=device, non_blocking=True) for k, t in batch.items()}
         initial_agent_state = tuple(
-            t.to(device=flags.device, non_blocking=True) for t in initial_agent_state
+            t.to(device=device, non_blocking=True) for t in initial_agent_state
         )
         timings.time("device")
         return batch, initial_agent_state
@@ -448,15 +426,18 @@ class Trainer:
 
     @classmethod
     def train(
-        cls, flags, logger: HasuraLogger
+        cls, flags: Flags, logger: HasuraLogger
     ):  # pylint: disable=too-many-branches, too-many-statements
-        if flags.xpid is None:
-            flags.xpid = "torchbeast-%s" % time.strftime("%Y%m%d-%H%M%S")
+        xpid = (
+            "torchbeast-%s" % time.strftime("%Y%m%d-%H%M%S")
+            if logger is None
+            else str(logger.run_id)
+        )
         plogger = file_writer.FileWriter(
-            xpid=flags.xpid, xp_args=flags.__dict__, rootdir=flags.savedir
+            xpid=xpid, xp_args=flags.as_dict(), rootdir=flags.savedir
         )
         checkpointpath = os.path.expandvars(
-            os.path.expanduser("%s/%s/%s" % (flags.savedir, flags.xpid, "model.tar"))
+            os.path.expanduser("%s/%s/%s" % (flags.savedir, xpid, "model.tar"))
         )
 
         if flags.num_buffers is None:  # Set sensible default for num_buffers.
@@ -472,10 +453,10 @@ class Trainer:
         flags.device = None
         if not flags.disable_cuda and torch.cuda.is_available():
             logging.info("Using CUDA.")
-            flags.device = torch.device("cuda")
+            device = torch.device("cuda")
         else:
             logging.info("Not using CUDA.")
-            flags.device = torch.device("cpu")
+            device = torch.device("cpu")
 
         env = cls.create_env(flags)
 
@@ -513,7 +494,7 @@ class Trainer:
             actor.start()
             actor_processes.append(actor)
 
-        learner_model = cls.build_net(flags, env).to(device=flags.device)
+        learner_model = cls.build_net(flags, env).to(device=device)
 
         optimizer = torch.optim.RMSprop(
             learner_model.parameters(),
@@ -546,6 +527,7 @@ class Trainer:
                 timings.reset()
                 batch, agent_state = cls.get_batch(
                     flags,
+                    device,
                     free_queue,
                     full_queue,
                     buffers,
@@ -575,7 +557,7 @@ class Trainer:
             free_queue.put(m)
 
         threads = []
-        for i in range(flags.num_learner_threads):
+        for i in range(flags.num_threads):
             thread = threading.Thread(
                 target=batch_and_learn, name="batch-and-learn-%d" % i, args=(i,)
             )
@@ -591,7 +573,7 @@ class Trainer:
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                     "scheduler_state_dict": scheduler.state_dict(),
-                    "flags": vars(flags),
+                    "flags": flags.as_dict(),
                 },
                 checkpointpath,
             )
@@ -650,13 +632,13 @@ class Trainer:
         plogger.close()
 
     @classmethod
-    def test(cls, flags, logger: HasuraLogger, num_episodes: int = 10):
-        if flags.xpid is None:
+    def test(cls, flags: Flags, logger: HasuraLogger, num_episodes: int = 10):
+        if logger is None:
             checkpointpath = "./latest/model.tar"
         else:
             checkpointpath = os.path.expandvars(
                 os.path.expanduser(
-                    "%s/%s/%s" % (flags.savedir, flags.xpid, "model.tar")
+                    "%s/%s/%s" % (flags.savedir, logger.run_id, "model.tar")
                 )
             )
 
@@ -704,7 +686,7 @@ class Trainer:
         )
 
     @classmethod
-    def main(cls, flags):
+    def main(cls, flags: Flags):
         assert os.getenv("OMP_NUM_THREADS") == "1"
         charts = [
             spec(x="hours", y="mean_episode_return"),
@@ -726,7 +708,11 @@ class Trainer:
             sweep_id=flags.sweep_id,
             load_id=flags.load_id,
             use_logger=flags.use_logger,
-            name=flags.name,
+            params=flags.as_dict(),
+            metadata=dict(
+                name=flags.name,
+                reproducibility_info=flags.get_reproducibility_info(),
+            ),
         )
         for k, v in params.items():
             if hasattr(flags, k):
@@ -741,5 +727,4 @@ class Trainer:
 
 
 if __name__ == "__main__":
-    flags = parser.parse_args()
-    Trainer().main(flags)
+    Trainer().main(Flags().parse_args())

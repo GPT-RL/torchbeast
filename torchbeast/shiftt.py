@@ -9,7 +9,7 @@ from torchbeast.core import environment
 from torchbeast.core.environment import _format_frame
 from torchbeast.environment import Observation, ObservationSpace, PointMassEnv
 from torchbeast.lazy_frames import LazyFrames
-from torchbeast.monobeast import parser
+from torchbeast.monobeast import Flags
 
 
 class ImageToPyTorch(atari_wrappers.ImageToPyTorch):
@@ -166,5 +166,4 @@ class Trainer(monobeast.Trainer):
 
 
 if __name__ == "__main__":
-    flags = parser.parse_args()
-    Trainer().main(flags)
+    Trainer().main(Flags().parse_args())
