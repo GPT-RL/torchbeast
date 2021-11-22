@@ -15,8 +15,9 @@
 import sys
 import unittest
 
-import nest
 import torch
+
+import nest
 
 
 class NestTest(unittest.TestCase):

@@ -17,10 +17,9 @@ import threading
 import time
 import unittest
 
+import libtorchbeast
 import numpy as np
 import torch
-import libtorchbeast
-
 
 _BROKEN_PROMISE_MESSAGE = (
     "The associated promise has been destructed prior"

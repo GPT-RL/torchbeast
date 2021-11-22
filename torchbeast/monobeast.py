@@ -22,20 +22,15 @@ import timeit
 import traceback
 import typing
 
-from sweep_logger import initialize, HasuraLogger
-
-from torchbeast.spec import spec
-
 import torch
+from sweep_logger import HasuraLogger, initialize
 from torch import multiprocessing as mp
 from torch import nn
 from torch.nn import functional as F
 
 from torchbeast import atari_wrappers
-from torchbeast.core import environment
-from torchbeast.core import file_writer
-from torchbeast.core import prof
-from torchbeast.core import vtrace
+from torchbeast.core import environment, file_writer, prof, vtrace
+from torchbeast.spec import spec
 
 # yapf: disable
 parser = argparse.ArgumentParser(description="PyTorch Scalable Agent")

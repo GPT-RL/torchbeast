@@ -13,8 +13,8 @@
 # limitations under the License.
 """Mock environment for the test contiguous_arrays_test.py."""
 
-import numpy as np
 import libtorchbeast
+import numpy as np
 
 
 class Env:

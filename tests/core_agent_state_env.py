@@ -13,9 +13,8 @@
 # limitations under the License.
 """Mock environment for the test core_agent_state_test.py."""
 
-import numpy as np
-
 import libtorchbeast
+import numpy as np
 
 
 class Env:

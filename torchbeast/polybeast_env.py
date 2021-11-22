@@ -18,10 +18,10 @@ import multiprocessing as mp
 import threading
 import time
 
-import numpy as np
 import libtorchbeast
-from torchbeast import atari_wrappers
+import numpy as np
 
+from torchbeast import atari_wrappers
 
 # yapf: disable
 parser = argparse.ArgumentParser(description='Remote Environment Server')

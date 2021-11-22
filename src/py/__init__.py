@@ -15,15 +15,8 @@
 
 import torch  # noqa: F401
 
-from ._C import (
-    BatchingQueue,
-    DynamicBatcher,
-    ActorPool,
-    Server,
-    ClosedBatchingQueue,
-    AsyncError,
-)
-
+from ._C import (ActorPool, AsyncError, BatchingQueue, ClosedBatchingQueue,
+                 DynamicBatcher, Server)
 
 __all__ = [
     "BatchingQueue",

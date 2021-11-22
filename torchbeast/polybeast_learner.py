@@ -21,14 +21,13 @@ import time
 import timeit
 import traceback
 
-import nest
-import torch
 import libtorchbeast
+import torch
 from torch import nn
 from torch.nn import functional as F
-from torchbeast.core import file_writer
-from torchbeast.core import vtrace
 
+import nest
+from torchbeast.core import file_writer, vtrace
 
 # Necessary for multithreading.
 os.environ["OMP_NUM_THREADS"] = "1"

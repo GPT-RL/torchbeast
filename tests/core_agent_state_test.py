@@ -13,14 +13,13 @@
 # limitations under the License.
 """Test that the core state is handled correctly by the batching mechanism."""
 
-import unittest
-import threading
 import subprocess
-
-import torch
-from torch import nn
+import threading
+import unittest
 
 import libtorchbeast
+import torch
+from torch import nn
 
 
 class Net(nn.Module):

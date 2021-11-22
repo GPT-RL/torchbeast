@@ -18,6 +18,7 @@ import unittest
 import numpy as np
 import torch
 from torch.nn import functional as F
+
 from torchbeast import polybeast_learner as polybeast
 
 

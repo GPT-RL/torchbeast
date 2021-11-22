@@ -20,9 +20,9 @@ import threading
 import time
 import unittest
 
+import libtorchbeast
 import numpy as np
 import torch
-import libtorchbeast
 
 
 class BatchingQueueTest(unittest.TestCase):

@@ -17,11 +17,9 @@ import subprocess
 import threading
 import unittest
 
-import numpy as np
-
-import torch
-
 import libtorchbeast
+import numpy as np
+import torch
 
 
 class ContiguousArraysTest(unittest.TestCase):
