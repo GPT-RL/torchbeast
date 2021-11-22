@@ -95,7 +95,7 @@ class PointMassEnv(gym.Env):
     image_height: float = 72
     image_width: float = 96
     is_render: bool = False
-    max_episode_steps = 200
+    max_episode_steps: int = 200
     model_name: str = "gpt2"
     reindex_tokens: bool = False
 

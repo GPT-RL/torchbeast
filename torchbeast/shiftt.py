@@ -12,6 +12,11 @@ from torchbeast.lazy_frames import LazyFrames
 from torchbeast.monobeast import Args
 
 
+class Args(monobeast.Args):
+    max_episode_steps: int = 200
+    model_name: str = "gpt2"
+
+
 class ImageToPyTorch(atari_wrappers.ImageToPyTorch):
     def __init__(self, env):
         gym.ObservationWrapper.__init__(self, env)
@@ -143,7 +148,11 @@ class Trainer(monobeast.Trainer):
 
     @staticmethod
     def create_env(args: Args):
-        env = PointMassEnv(reindex_tokens=True)
+        env = PointMassEnv(
+            max_episode_steps=args.max_episode_steps,
+            model_name=args.model_name,
+            reindex_tokens=True,
+        )
         env = ScaledFloatFrame(env)
         env = FrameStack(env, 4)
         env = ImageToPyTorch(env)
