@@ -26,8 +26,6 @@ from sweep_logger import initialize, HasuraLogger
 
 from torchbeast.spec import spec
 
-os.environ["OMP_NUM_THREADS"] = "1"  # Necessary for multithreading.
-
 import torch
 from torch import multiprocessing as mp
 from torch import nn
@@ -666,6 +664,7 @@ def create_env(flags):
 
 
 def main(flags):
+    assert os.getenv("OMP_NUM_THREADS") == "1"
     charts = [
         spec(x="hours", y="mean_episode_return"),
         *[
