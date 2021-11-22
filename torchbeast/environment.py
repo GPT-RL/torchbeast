@@ -220,12 +220,8 @@ class PointMassEnv(gym.Env):
         missions = []
         goals = []
         cameraYaw = 0
-        # choices= self.np_random.choice(len(self.urdfs), size=2, replace=False)
-        choices = [0, 1]
-        urdfs = [
-            self.urdfs[i]
-            for i in choices
-        ]
+        choices = self.np_random.choice(2, size=2, replace=False)
+        urdfs = [self.urdfs[i] for i in choices]
 
         for base_position, urdf in zip(
             [
