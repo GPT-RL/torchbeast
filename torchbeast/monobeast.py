@@ -94,6 +94,7 @@ parser.add_argument("--config", default=None, type=str)
 parser.add_argument("--sweep_id", default=None, type=int)
 parser.add_argument("--load_id", default=None, type=int)
 parser.add_argument("--use_logger", action="store_true")
+parser.add_argument("--name")
 # yapf: enable
 
 
@@ -704,6 +705,7 @@ class Trainer:
             sweep_id=flags.sweep_id,
             load_id=flags.load_id,
             use_logger=flags.use_logger,
+            name=flags.name,
         )
         for k, v in params.items():
             if hasattr(flags, k):
