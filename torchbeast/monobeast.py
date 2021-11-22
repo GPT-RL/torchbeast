@@ -604,12 +604,12 @@ class Trainer:
                 )
                 if logger is not None:
                     logger.log(
-                        dict(
-                            run_id=logger.run_id,
-                            step=step,
-                            hours=last_checkpoint_time / 3600,
+                        {
+                            "step": step,
+                            "hours": last_checkpoint_time / 3600,
+                            "run ID": logger.run_id,
                             **stats,
-                        )
+                        }
                     )
 
         except KeyboardInterrupt:
