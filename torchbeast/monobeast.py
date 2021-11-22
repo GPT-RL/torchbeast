@@ -610,7 +610,7 @@ class Trainer:
                     logger.log(
                         {
                             "step": step,
-                            "hours": last_checkpoint_time / 3600,
+                            "hours": timer() / 3600,
                             "run ID": logger.run_id,
                             **stats,
                         }
