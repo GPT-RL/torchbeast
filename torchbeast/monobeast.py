@@ -34,7 +34,7 @@ from torchbeast.core import environment, file_writer, prof, vtrace
 from torchbeast.spec import spec
 
 
-class Flags(Tap):
+class Args(Tap):
     env: str = "PongNoFrameskip-v4"  # Gym environment.
     mode: typing.Literal[
         "train", "test", "test_render"
@@ -216,7 +216,7 @@ class Trainer:
     @classmethod
     def act(
         cls,
-        flags: Flags,
+        args: Args,
         actor_index: int,
         free_queue: mp.SimpleQueue,
         full_queue: mp.SimpleQueue,
@@ -228,7 +228,7 @@ class Trainer:
             logging.info("Actor %i started.", actor_index)
             timings = prof.Timings()  # Keep track of how fast things are.
 
-            gym_env = cls.create_env(flags)
+            gym_env = cls.create_env(args)
             seed = actor_index ^ int.from_bytes(os.urandom(4), byteorder="little")
             gym_env.seed(seed)
             env = cls.wrap_env(gym_env)
@@ -249,7 +249,7 @@ class Trainer:
                     initial_agent_state_buffers[index][i][...] = tensor
 
                 # Do new rollout.
-                for t in range(flags.unroll_length):
+                for t in range(args.unroll_length):
                     timings.reset()
 
                     with torch.no_grad():
@@ -282,7 +282,7 @@ class Trainer:
 
     @staticmethod
     def get_batch(
-        flags: Flags,
+        args: Args,
         device: torch.device,
         free_queue: mp.SimpleQueue,
         full_queue: mp.SimpleQueue,
@@ -293,7 +293,7 @@ class Trainer:
     ):
         with lock:
             timings.time("lock")
-            indices = [full_queue.get() for _ in range(flags.batch_size)]
+            indices = [full_queue.get() for _ in range(args.batch_size)]
             timings.time("dequeue")
         batch = {
             key: torch.stack([buffers[key][m] for m in indices], dim=1)
@@ -317,7 +317,7 @@ class Trainer:
     @classmethod
     def learn(
         cls,
-        flags,
+        args,
         actor_model,
         model,
         batch,
@@ -340,12 +340,12 @@ class Trainer:
             }
 
             rewards = batch["reward"]
-            if flags.reward_clipping == "abs_one":
+            if args.reward_clipping == "abs_one":
                 clipped_rewards = torch.clamp(rewards, -1, 1)
-            elif flags.reward_clipping == "none":
+            elif args.reward_clipping == "none":
                 clipped_rewards = rewards
 
-            discounts = (~batch["done"]).float() * flags.discounting
+            discounts = (~batch["done"]).float() * args.discounting
 
             vtrace_returns = vtrace.from_logits(
                 behavior_policy_logits=batch["policy_logits"],
@@ -362,10 +362,10 @@ class Trainer:
                 batch["action"],
                 vtrace_returns.pg_advantages,
             )
-            baseline_loss = flags.baseline_cost * compute_baseline_loss(
+            baseline_loss = args.baseline_cost * compute_baseline_loss(
                 vtrace_returns.vs - learner_outputs["baseline"]
             )
-            entropy_loss = flags.entropy_cost * compute_entropy_loss(
+            entropy_loss = args.entropy_cost * compute_entropy_loss(
                 learner_outputs["policy_logits"]
             )
 
@@ -382,7 +382,7 @@ class Trainer:
 
             optimizer.zero_grad()
             total_loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), flags.grad_norm_clipping)
+            nn.utils.clip_grad_norm_(model.parameters(), args.grad_norm_clipping)
             optimizer.step()
             scheduler.step()
 
@@ -390,11 +390,11 @@ class Trainer:
             return stats
 
     @classmethod
-    def create_buffers(cls, flags, obs_space, num_actions) -> Buffers:
-        T = flags.unroll_length
+    def create_buffers(cls, args, obs_space, num_actions) -> Buffers:
+        T = args.unroll_length
         specs = cls.buffer_specs(obs_space, num_actions, T)
         buffers: Buffers = {key: [] for key in specs}
-        for _ in range(flags.num_buffers):
+        for _ in range(args.num_buffers):
             for key in buffers:
                 buffers[key].append(torch.empty(**specs[key]).share_memory_())
         return buffers
@@ -415,9 +415,9 @@ class Trainer:
         )
 
     @classmethod
-    def build_net(cls, flags, gym_env):
+    def build_net(cls, args, gym_env):
         return Net(
-            gym_env.observation_space.shape, gym_env.action_space.n, flags.use_lstm
+            gym_env.observation_space.shape, gym_env.action_space.n, args.use_lstm
         )
 
     @staticmethod
@@ -426,7 +426,7 @@ class Trainer:
 
     @classmethod
     def train(
-        cls, flags: Flags, logger: HasuraLogger
+        cls, args: Args, logger: HasuraLogger
     ):  # pylint: disable=too-many-branches, too-many-statements
         xpid = (
             "torchbeast-%s" % time.strftime("%Y%m%d-%H%M%S")
@@ -434,40 +434,40 @@ class Trainer:
             else str(logger.run_id)
         )
         plogger = file_writer.FileWriter(
-            xpid=xpid, xp_args=flags.as_dict(), rootdir=flags.savedir
+            xpid=xpid, xp_args=args.as_dict(), rootdir=args.savedir
         )
         checkpointpath = os.path.expandvars(
-            os.path.expanduser("%s/%s/%s" % (flags.savedir, xpid, "model.tar"))
+            os.path.expanduser("%s/%s/%s" % (args.savedir, xpid, "model.tar"))
         )
 
-        if flags.num_buffers is None:  # Set sensible default for num_buffers.
-            flags.num_buffers = max(2 * flags.num_actors, flags.batch_size)
-        if flags.num_actors >= flags.num_buffers:
+        if args.num_buffers is None:  # Set sensible default for num_buffers.
+            args.num_buffers = max(2 * args.num_actors, args.batch_size)
+        if args.num_actors >= args.num_buffers:
             raise ValueError("num_buffers should be larger than num_actors")
-        if flags.num_buffers < flags.batch_size:
+        if args.num_buffers < args.batch_size:
             raise ValueError("num_buffers should be larger than batch_size")
 
-        T = flags.unroll_length
-        B = flags.batch_size
+        T = args.unroll_length
+        B = args.batch_size
 
-        flags.device = None
-        if not flags.disable_cuda and torch.cuda.is_available():
+        args.device = None
+        if not args.disable_cuda and torch.cuda.is_available():
             logging.info("Using CUDA.")
             device = torch.device("cuda")
         else:
             logging.info("Not using CUDA.")
             device = torch.device("cpu")
 
-        env = cls.create_env(flags)
+        env = cls.create_env(args)
 
-        model = cls.build_net(flags, env)
-        buffers = cls.create_buffers(flags, env.observation_space, model.num_actions)
+        model = cls.build_net(args, env)
+        buffers = cls.create_buffers(args, env.observation_space, model.num_actions)
 
         model.share_memory()
 
         # Add initial RNN state.
         initial_agent_state_buffers = []
-        for _ in range(flags.num_buffers):
+        for _ in range(args.num_buffers):
             state = model.initial_state(batch_size=1)
             for t in state:
                 t.share_memory_()
@@ -478,11 +478,11 @@ class Trainer:
         free_queue = ctx.SimpleQueue()
         full_queue = ctx.SimpleQueue()
 
-        for i in range(flags.num_actors):
+        for i in range(args.num_actors):
             actor = ctx.Process(
                 target=cls.act,
                 args=(
-                    flags,
+                    args,
                     i,
                     free_queue,
                     full_queue,
@@ -494,18 +494,18 @@ class Trainer:
             actor.start()
             actor_processes.append(actor)
 
-        learner_model = cls.build_net(flags, env).to(device=device)
+        learner_model = cls.build_net(args, env).to(device=device)
 
         optimizer = torch.optim.RMSprop(
             learner_model.parameters(),
-            lr=flags.learning_rate,
-            momentum=flags.momentum,
-            eps=flags.epsilon,
-            alpha=flags.alpha,
+            lr=args.learning_rate,
+            momentum=args.momentum,
+            eps=args.epsilon,
+            alpha=args.alpha,
         )
 
         def lr_lambda(epoch):
-            return 1 - min(epoch * T * B, flags.total_steps) / flags.total_steps
+            return 1 - min(epoch * T * B, args.total_steps) / args.total_steps
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
@@ -523,10 +523,10 @@ class Trainer:
             """Thread target for the learning process."""
             nonlocal step, stats
             timings = prof.Timings()
-            while step < flags.total_steps:
+            while step < args.total_steps:
                 timings.reset()
                 batch, agent_state = cls.get_batch(
-                    flags,
+                    args,
                     device,
                     free_queue,
                     full_queue,
@@ -535,7 +535,7 @@ class Trainer:
                     timings,
                 )
                 stats = cls.learn(
-                    flags,
+                    args,
                     model,
                     learner_model,
                     batch,
@@ -553,11 +553,11 @@ class Trainer:
             if j == 0:
                 logging.info("Batch and learn: %s", timings.summary())
 
-        for m in range(flags.num_buffers):
+        for m in range(args.num_buffers):
             free_queue.put(m)
 
         threads = []
-        for i in range(flags.num_threads):
+        for i in range(args.num_threads):
             thread = threading.Thread(
                 target=batch_and_learn, name="batch-and-learn-%d" % i, args=(i,)
             )
@@ -565,7 +565,7 @@ class Trainer:
             threads.append(thread)
 
         def checkpoint():
-            if flags.disable_checkpoint:
+            if args.disable_checkpoint:
                 return
             logging.info("Saving checkpoint to %s", checkpointpath)
             torch.save(
@@ -573,7 +573,7 @@ class Trainer:
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                     "scheduler_state_dict": scheduler.state_dict(),
-                    "flags": flags.as_dict(),
+                    "args": args.as_dict(),
                 },
                 checkpointpath,
             )
@@ -581,7 +581,7 @@ class Trainer:
         timer = timeit.default_timer
         try:
             last_checkpoint_time = timer()
-            while step < flags.total_steps:
+            while step < args.total_steps:
                 start_step = step
                 start_time = timer()
                 time.sleep(5)
@@ -610,7 +610,7 @@ class Trainer:
                     logger.log(
                         {
                             "step": step,
-                            "hours": timer() / 3600,
+                            "hours": (timer() - start_time) / 3600,
                             "run ID": logger.run_id,
                             **stats,
                         }
@@ -623,7 +623,7 @@ class Trainer:
                 thread.join()
             logging.info("Learning finished after %d steps.", step)
         finally:
-            for _ in range(flags.num_actors):
+            for _ in range(args.num_actors):
                 free_queue.put(None)
             for actor in actor_processes:
                 actor.join(timeout=1)
@@ -632,20 +632,20 @@ class Trainer:
         plogger.close()
 
     @classmethod
-    def test(cls, flags: Flags, logger: HasuraLogger, num_episodes: int = 10):
+    def test(cls, args: Args, logger: HasuraLogger, num_episodes: int = 10):
         if logger is None:
             checkpointpath = "./latest/model.tar"
         else:
             checkpointpath = os.path.expandvars(
                 os.path.expanduser(
-                    "%s/%s/%s" % (flags.savedir, logger.run_id, "model.tar")
+                    "%s/%s/%s" % (args.savedir, logger.run_id, "model.tar")
                 )
             )
 
-        gym_env = cls.create_env(flags)
+        gym_env = cls.create_env(args)
         env = environment.Environment(gym_env)
         model = Net(
-            gym_env.observation_space.shape, gym_env.action_space.n, flags.use_lstm
+            gym_env.observation_space.shape, gym_env.action_space.n, args.use_lstm
         )
         model.eval()
         checkpoint = torch.load(checkpointpath, map_location="cpu")
@@ -655,7 +655,7 @@ class Trainer:
         returns = []
 
         while len(returns) < num_episodes:
-            if flags.mode == "test_render":
+            if args.mode == "test_render":
                 env.gym_env.render()
             agent_outputs = model(observation)
             policy_outputs, _ = agent_outputs
@@ -675,10 +675,10 @@ class Trainer:
         )
 
     @staticmethod
-    def create_env(flags):
+    def create_env(args):
         return atari_wrappers.wrap_pytorch(
             atari_wrappers.wrap_deepmind(
-                atari_wrappers.make_atari(flags.env),
+                atari_wrappers.make_atari(args.env),
                 clip_rewards=False,
                 frame_stack=True,
                 scale=False,
@@ -686,7 +686,7 @@ class Trainer:
         )
 
     @classmethod
-    def main(cls, flags: Flags):
+    def main(cls, args: Args):
         assert os.getenv("OMP_NUM_THREADS") == "1"
         charts = [
             spec(x="hours", y="mean_episode_return"),
@@ -702,29 +702,29 @@ class Trainer:
             ],
         ]
         params, logger = initialize(
-            graphql_endpoint=flags.graphql_endpoint,
-            config=flags.config,
+            graphql_endpoint=args.graphql_endpoint,
+            config=args.config,
             charts=charts,
-            sweep_id=flags.sweep_id,
-            load_id=flags.load_id,
-            use_logger=flags.use_logger,
-            params=flags.as_dict(),
+            sweep_id=args.sweep_id,
+            load_id=args.load_id,
+            use_logger=args.use_logger,
+            params=args.as_dict(),
             metadata=dict(
-                name=flags.name,
-                reproducibility_info=flags.get_reproducibility_info(),
+                name=args.name,
+                reproducibility_info=args.get_reproducibility_info(),
             ),
         )
         for k, v in params.items():
-            if hasattr(flags, k):
-                setattr(flags, k, v)
+            if hasattr(args, k):
+                setattr(args, k, v)
             else:
                 raise RuntimeError(f"No such arg: {k}")
 
-        if flags.mode == "train":
-            cls.train(flags, logger)
+        if args.mode == "train":
+            cls.train(args, logger)
         else:
-            cls.test(flags, logger)
+            cls.test(args, logger)
 
 
 if __name__ == "__main__":
-    Trainer().main(Flags().parse_args())
+    Trainer().main(Args().parse_args())
