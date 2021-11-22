@@ -24,6 +24,8 @@ import typing
 
 from sweep_logger import initialize, HasuraLogger
 
+from torchbeast.spec import spec
+
 os.environ["OMP_NUM_THREADS"] = "1"  # Necessary for multithreading.
 
 import torch
@@ -36,7 +38,6 @@ from torchbeast.core import environment
 from torchbeast.core import file_writer
 from torchbeast.core import prof
 from torchbeast.core import vtrace
-
 
 # yapf: disable
 parser = argparse.ArgumentParser(description="PyTorch Scalable Agent")
@@ -287,7 +288,6 @@ def learn(
 
         episode_returns = batch["episode_return"][batch["done"]]
         stats = {
-            "episode_returns": tuple(episode_returns.cpu().numpy()),
             "mean_episode_return": torch.mean(episode_returns).item(),
             "total_loss": total_loss.item(),
             "pg_loss": pg_loss.item(),
@@ -499,7 +499,14 @@ def train(
                 pprint.pformat(stats),
             )
             if logger is not None:
-                logger.log(dict(run_id=logger.run_id, step=step, **stats))
+                logger.log(
+                    dict(
+                        run_id=logger.run_id,
+                        step=step,
+                        hours=last_checkpoint_time / 3600,
+                        **stats,
+                    )
+                )
 
     except KeyboardInterrupt:
         return  # Try joining actors then quit.
@@ -659,9 +666,23 @@ def create_env(flags):
 
 
 def main(flags):
+    charts = [
+        spec(x="hours", y="mean_episode_return"),
+        *[
+            spec(x="step", y=y)
+            for y in (
+                "mean_episode_return",
+                "total_loss",
+                "pg_loss",
+                "baseline_loss",
+                "entropy_loss",
+            )
+        ],
+    ]
     params, logger = initialize(
         graphql_endpoint=flags.graphql_endpoint,
         config=flags.config,
+        charts=charts,
         sweep_id=flags.sweep_id,
         load_id=flags.load_id,
         use_logger=flags.use_logger,
